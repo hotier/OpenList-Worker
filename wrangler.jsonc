@@ -2,14 +2,15 @@
 // OpenList-TSWorker · Cloudflare Workers 配置
 // 文档：https://developers.cloudflare.com/workers/wrangler/configuration/
 //
-// ⚠️ 本项目的「绑定（D1 / KV 等）」与「环境变量（DB_* 等）」统一在 Cloudflare
-// 面板（Dashboard）维护，不写进本文件。原因：wrangler deploy 会用本文件的
-// vars / bindings 覆盖线上面板配置，导致每次自动部署后变量被打回默认值。
-// 因此这里刻意不声明 vars 与存储绑定，部署只更新代码，配置以面板为准。
+// ⚠️ 重要：D1 / KV 等「绑定」必须写在本文件里。
+//   wrangler deploy 会用本文件的 bindings 覆盖线上，keep_vars 只保护明文变量、
+//   不保护绑定；若本文件不声明绑定，部署会把线上的 D1/KV 绑定删除。
+//   因此绑定在此声明，保证每次自动部署都保留。
+//
+// 普通变量（DB_* 等）也可在此声明以固化；面板上的同名明文变量会被本文件覆盖。
 //
 // Secret（JWT_SECRET / ADMIN_PASS / ALLOW_URLS / MYSQL_URLS / EO_KV_URLS / CF_* 等）
-// 请在 .dev.vars.example 或 .env.example 中声明 —— 部署按钮据此生成输入项，
-// 用户填入的值会成为该 Worker 的 Secret，后续更新不会被覆盖。
+// 不会被 wrangler deploy 覆盖，保持面板/secret 管理即可。
 // =============================================================================
 {
   "name": "openlist-worker",
@@ -26,7 +27,6 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
   "preview_urls": false,
-  // 关键：保留面板上已有的变量与绑定，避免每次部署被本文件覆盖/删除。
   "keep_vars": true,
   "assets": {
     "directory": "./dist",
@@ -35,20 +35,31 @@
   },
 
   // ===========================================================================
-  // 环境变量（vars）：刻意留空 —— 统一在 Cloudflare 面板维护。
-  // 若在此声明，每次 wrangler deploy 都会覆盖线上面板里同名的普通变量。
-  // 需要的变量（在面板 Settings → Variables and secrets 设置）：
-  //   ENVIRONMENT / DB_FORMAT / DB_DRIVER / DB_CIPHER 等
+  // 普通环境变量（vars）：在此固化，保证每次部署结果稳定。
   // ===========================================================================
-  "vars": {},
+  "vars": {
+    "ENVIRONMENT": "production",
+    "DB_FORMAT": "sql",
+    "DB_DRIVER": "d1",
+    "DB_CIPHER": "none"
+  },
 
   // ===========================================================================
-  // 存储绑定：刻意留空 —— 统一在 Cloudflare 面板维护。
-  // 若在此声明，每次 wrangler deploy 都会覆盖线上面板里的绑定配置。
-  // 需要的绑定（在面板 Settings → Bindings 维护）：
-  //   - D1 数据库绑定名 DB
-  //   - KV 命名空间绑定名 KV（如使用）
-  //   - R2 / Durable Objects 等按需
+  // 存储绑定：必须声明，否则部署会删除线上绑定。
   // ===========================================================================
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "opnelist",
+      "database_id": "9f53029f-95a9-4257-86d0-3d6d05dff113"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "KV",
+      "id": "111a57d369a041b8a2940ff65aef81dc"
+    }
+  ]
 }
+
 
