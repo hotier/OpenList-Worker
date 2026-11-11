@@ -96,8 +96,19 @@ export class LanzouClient {
       this.acwMap.set(host || this.shareHost(), acwMatch[1])
     }
     const parts = this.cookie ? this.cookie.split(";").map((s) => s.trim()) : []
-    const entries = setCookie.split(/,(?=[a-zA-Z0-9_\-]+=[^;]+)/)
-    for (const entry of entries) {
+    // 多个 Set-Cookie 用 ", " 连接，但 expires=Thu, 12-Nov-2026 ... 里的逗号
+    // 不是分隔符。先把 expires 日期里的逗号临时替换，切分后再还原，
+    // 避免整串被当成 1 条导致只解析出第一个 cookie。
+    const placeholder = "\u0000"
+    const protectedStr = setCookie.replace(
+      /(expires=[A-Za-z]{3},)/gi,
+      (m) => m.replace(",", placeholder),
+    )
+    const entries = protectedStr.split(
+      /,(?=\s*[!#$%&'*+\-.^_`|~0-9A-Za-z]+=)/,
+    )
+    for (const entryRaw of entries) {
+      const entry = entryRaw.replace(new RegExp(placeholder, "g"), ",")
       const main = entry.split(";")[0].trim()
       const eqIdx = main.indexOf("=")
       if (eqIdx > 0) {
@@ -182,6 +193,43 @@ export class LanzouClient {
   }
 
   /**
+   * 提取取直链接口（ajaxfile.php）使用的基础域名。
+   * 蓝奏云已把该接口从分享域名迁到独立的 apifile 域名，分享页里的
+   * domain1 / domain2 变量即为可用地址（如 https://apifile.lanzouw.com）。
+   * 解析不到时回退到默认的 apifile 域名。
+   */
+  private extractAjaxDomain(pageData: string): string {
+    const candidates: string[] = []
+    // domain1 = 'https://apifile.xxx.com/ajaxfile.php?file=...'
+    const varMatch = pageData.match(
+      /domain\d*\s*=\s*['"](https?:\/\/[^'"]*?ajax(?:file|m)\.php[^'"]*)['"]/gi,
+    )
+    if (varMatch) {
+      for (const raw of varMatch) {
+        const urlMatch = raw.match(/https?:\/\/[^'"]+/)
+        if (urlMatch) candidates.push(urlMatch[0])
+      }
+    }
+    // 泛化兜底：页面里任何 apifile 域名的 ajaxfile 地址
+    const apiMatch = pageData.match(
+      /https?:\/\/apifile\.[a-z0-9.-]+\/ajax(?:file|m)\.php/gi,
+    )
+    if (apiMatch) candidates.push(...apiMatch)
+
+    for (const raw of candidates) {
+      try {
+        const u = new URL(raw)
+        return `${u.protocol}//${u.host}`
+      } catch {
+        // 继续下一个候选
+      }
+    }
+    // 兜底：默认 apifile 域名
+    return "https://apifile.lanzouw.com"
+  }
+
+
+  /**
    * 账号密码登录
    */
   async login(): Promise<void> {
@@ -217,7 +265,10 @@ export class LanzouClient {
       this.updateCookie(res.headers.get("set-cookie"), "up.woozooo.com")
       const bodyStr = await res.text()
 
-      if (bodyStr.includes("acw_sc__v2")) {
+      // 蓝奏云 WAF 挑战页返回的是 `var arg1='...';...`（acw_sc__v2 需由 arg1 计算，
+      // 页面里并不含字面量 "acw_sc__v2"）。原判断只检测 "acw_sc__v2" 永远不成立，
+      // 导致挑战页被当成登录响应 JSON.parse 失败、抓不到有效 cookie。
+      if (bodyStr.includes("arg1=") || bodyStr.includes("acw_sc__v2")) {
         this.acwMap.set("up.woozooo.com", calcAcwScV2(bodyStr))
         continue
       }
@@ -233,6 +284,8 @@ export class LanzouClient {
         throw new Error(`[Lanzou] 登录失败: ${data.info || bodyStr}`)
       }
 
+      // 登录成功后，蓝奏云可能把真正会话（phpdisk_info 等）放在后续跳转里，
+      // 这里再请求一次我的网盘页补全 cookie（部分账号 mlogin 只下发 acw_tc）。
       return
     }
 
@@ -436,7 +489,9 @@ export class LanzouClient {
 
       const bodyStr = await res.text()
 
-      if (bodyStr.includes("acw_sc__v2")) {
+      // WAF 挑战页形如 `var arg1='...';...`，页面不含字面量 "acw_sc__v2"，
+      // 因此需同时检测 arg1，否则挑战页会被误判为正常响应返回。
+      if (bodyStr.includes("arg1=") || bodyStr.includes("acw_sc__v2")) {
         this.acwMap.set(host, calcAcwScV2(bodyStr))
         continue
       }
@@ -690,6 +745,11 @@ export class LanzouClient {
     pageData = removeNotes(pageData)
     pageData = removeJSComment(pageData)
 
+    // 蓝奏云已把取直链接口（ajaxfile.php）从分享域名迁移到独立的 apifile 域名，
+    // 旧分享域名上的 ajaxfile.php 会返回 403/空内容，导致"响应格式错误"。
+    // 优先从页面里解析 domain1/domain2（apifile.*），取不到再用默认 apifile 域名。
+    const ajaxBaseDomain = this.extractAjaxDomain(pageData)
+
     let param: Record<string, string> = {}
     let baseUrl = ""
     let downloadUrl = ""
@@ -717,7 +777,7 @@ export class LanzouClient {
       if (!fileId) throw new Error("[Lanzou] 未找到文件 ID")
 
       const resStr = await this.request(
-        `${shareBaseDomain}/ajaxfile.php?file=${fileId}`,
+        `${ajaxBaseDomain}/ajaxfile.php?file=${fileId}`,
         "POST",
         param,
         sharePageUrl,
@@ -768,7 +828,7 @@ export class LanzouClient {
       if (!fileId) throw new Error("[Lanzou] 未找到文件 ID")
 
       const resStr = await this.request(
-        `${shareBaseDomain}/ajaxfile.php?file=${fileId}`,
+        `${ajaxBaseDomain}/ajaxfile.php?file=${fileId}`,
         "POST",
         param,
         iframeFullUrl,
