@@ -481,21 +481,49 @@ export class S3Client {
     key: string,
   ): Promise<{ size: number; modified: string; etag: string } | null> {
     const url = this.getUrl(key)
-    const resp = await this.fetch("HEAD", url)
-    if (resp.status === 404) {
-      return null
-    }
-    if (!resp.ok) {
+    // 部分 S3 兼容服务（如七牛 Kodo）在 Cloudflare 机房出口会偶发 403/429/5xx。
+    // 这类失败是瞬时的，重试几次通常即可成功，避免直接抛错导致"打开文件失败"。
+    let lastErr: any
+    for (let attempt = 0; attempt < 3; attempt++) {
+      let resp: Response
+      try {
+        resp = await this.fetch("HEAD", url)
+      } catch (e: any) {
+        // 网络层错误（连接重置/TLS 中断等）同样重试
+        lastErr = e
+        if (attempt < 2) {
+          await new Promise((r) => setTimeout(r, 200 * (attempt + 1)))
+          continue
+        }
+        throw e
+      }
+      if (resp.status === 404) {
+        return null
+      }
+      if (resp.ok) {
+        const size = parseInt(resp.headers.get("content-length") || "0", 10)
+        const modified =
+          resp.headers.get("last-modified") || new Date().toISOString()
+        const etag = (resp.headers.get("etag") || "").replace(/"/g, "")
+        return { size, modified, etag }
+      }
+      // 403/429/5xx 视为可重试的瞬时错误
+      const retryable =
+        resp.status === 403 ||
+        resp.status === 429 ||
+        resp.status === 408 ||
+        resp.status >= 500
+      if (retryable && attempt < 2) {
+        const text = await resp.text().catch(() => "")
+        lastErr = parseS3Error(text, resp.status)
+        await new Promise((r) => setTimeout(r, 200 * (attempt + 1)))
+        continue
+      }
       const text = await resp.text().catch(() => "")
       throw parseS3Error(text, resp.status)
     }
-
-    const size = parseInt(resp.headers.get("content-length") || "0", 10)
-    const modified =
-      resp.headers.get("last-modified") || new Date().toISOString()
-    const etag = (resp.headers.get("etag") || "").replace(/"/g, "")
-
-    return { size, modified, etag }
+    if (lastErr) throw lastErr
+    return null
   }
 
   public async listPrefixProbe(

@@ -164,7 +164,17 @@ export class S3Driver implements StorageDriver {
   async get(virtualPath: string, physicalPath: string): Promise<FileItem> {
     await this.checkDogeToken()
     const remotePath = this.getRemotePath(physicalPath)
-    const head = await this.client.headObject(remotePath)
+
+    let head: { size: number; modified: string; etag: string } | null = null
+    let headError: any = null
+    try {
+      head = await this.client.headObject(remotePath)
+    } catch (e: any) {
+      // headObject 已内部重试；仍失败时记录错误，不直接抛出，尝试容错降级：
+      // 部分 S3 兼容服务在机房出口会持续偶发 403，此时用默认元信息直接生成
+      // 下载直链，保证文件仍可访问，而不是让整个"打开文件"请求失败。
+      headError = e
+    }
 
     if (head) {
       const fileName = getBaseName(remotePath)
@@ -179,6 +189,43 @@ export class S3Driver implements StorageDriver {
         },
         remotePath,
       )
+    }
+
+    // headObject 失败时，仅在确属瞬时错误(403/429/5xx/网络)才降级放行，
+    // 404 等确定性错误仍走下面的目录探测/未找到逻辑。
+    if (headError) {
+      const msg = String(headError?.message || headError)
+      const retryable =
+        /HTTP (403|408|429|5\d\d)/.test(msg) ||
+        /fetch failed|ECONNRESET|network|socket/i.test(msg)
+      if (retryable) {
+        const fileName = getBaseName(remotePath)
+        try {
+          const linkRes = await this.client.getLink(
+            remotePath,
+            fileName,
+            Number(this.addition.sign_url_expire) || 4,
+            this.addition.custom_host,
+            this.addition.enable_custom_host_presign,
+            this.addition.remove_bucket,
+            this.addition.add_filename_to_disposition,
+          )
+          return {
+            name: fileName,
+            size: 0,
+            is_dir: false,
+            modified: new Date().toISOString(),
+            sign: remotePath,
+            type: calcFileType(fileName, false),
+            thumb: "",
+            raw_url: linkRes.url,
+            raw_url_headers: linkRes.headers,
+          }
+        } catch {
+          // 降级也失败则继续抛原始错误
+        }
+      }
+      throw headError
     }
 
     // Check if it's a directory
