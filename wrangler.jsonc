@@ -7,7 +7,7 @@
 // 用户填入的值会成为该 Worker 的 Secret，后续更新不会被覆盖。
 // =============================================================================
 {
-  "name": "openlist-workers",
+  "name": "openlist-worker",
   "main": "src/backend/worker.ts",
 
   // iconv-lite 只有 FTP 驱动在用，而 Workers 没有 TCP socket、FTP 驱动不可用。
