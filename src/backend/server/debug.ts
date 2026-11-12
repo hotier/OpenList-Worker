@@ -137,6 +137,48 @@ debugRouter.get("/net-probe", async (c) => {
         causeMsg: e?.cause?.message,
       }
     }
+
+    // 5) 验证假设：关闭 Happy Eyeballs 后再 fetch 一次
+    //    （autoSelectFamily 在 250ms 就切到 IPv6，而 IPv6 在此出口
+    //     ENETUNREACH，导致整条连接在 257ms 被掐断）
+    out.autoSelectFamilyBefore =
+      typeof (net as any).getDefaultAutoSelectFamily === "function"
+        ? (net as any).getDefaultAutoSelectFamily()
+        : "n/a"
+    try {
+      if (typeof (net as any).setDefaultAutoSelectFamily === "function") {
+        ;(net as any).setDefaultAutoSelectFamily(false)
+      }
+      const dnsMod: any = await import("node:dns")
+      if (typeof dnsMod?.setDefaultResultOrder === "function") {
+        dnsMod.setDefaultResultOrder("ipv4first")
+      }
+    } catch {}
+    out.autoSelectFamilyAfter =
+      typeof (net as any).getDefaultAutoSelectFamily === "function"
+        ? (net as any).getDefaultAutoSelectFamily()
+        : "n/a"
+
+    const fetchResults: any[] = []
+    for (let i = 1; i <= 5; i++) {
+      const s = Date.now()
+      try {
+        const res = await fetch(
+          `https://${HOST}/1/clouddrive/config?pr=ucpro&fr=pc`,
+          { signal: AbortSignal.timeout(15000) },
+        )
+        await res.text()
+        fetchResults.push({ try: i, ms: Date.now() - s, status: res.status, ok: true })
+      } catch (e: any) {
+        fetchResults.push({
+          try: i,
+          ms: Date.now() - s,
+          ok: false,
+          causeCode: e?.cause?.code || e?.cause?.cause?.code,
+        })
+      }
+    }
+    out.fetchAfterDisable = fetchResults
   } catch (e: any) {
     out.fatal = { message: e?.message, code: e?.code }
   }

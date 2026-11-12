@@ -14,30 +14,47 @@ import {
 } from "./types"
 
 /**
- * 一次性 IPv4 优先初始化（懒执行）。
+ * 一次性网络栈初始化（懒执行）：关闭 Happy Eyeballs，走纯 IPv4。
  *
- * 为什么不用顶层 await：EdgeOne Makers 的云函数构建流程会用目标 `node14`
- * 的 esbuild 再打包一次产物，顶层 await 在该目标下是硬错误
- * （`Top-level await is not available in the configured target environment
- * ("node14")`），会让整个部署构建失败。因此这里改成「首次请求时懒初始化」，
- * 动态 import 放在 async 函数内部，产物里不含顶层 await。
+ * ## 为什么不用顶层 await
+ * EdgeOne Makers 的云函数构建会用目标 `node14` 的 esbuild 再打包一次产物，
+ * 顶层 await 在该目标下是硬错误（`Top-level await is not available in the
+ * configured target environment ("node14")`），会让整个部署构建失败。因此
+ * 动态 import 必须放在 async 函数内部、首次请求时执行。
  *
- * 背景（EdgeOne Makers 免费套餐固定 ap-singapore，无法改函数地域）：
- * 出网访问 drive-m.quark.cn（阿里国内 CDN，dualstack：A 203.119.169.64 /
- * AAAA 2408:4001:f00::27e）时连接层间歇性 ETIMEDOUT；而 IPv4 直连该域名
- * 在国内线路 10/10 正常。把解析顺序设为 IPv4 优先后可绕开海外到国内
- * IPv6 侧的丢包路径。
+ * ## 真正的根因（EdgeOne 运行时实测，非推测）
+ * EdgeOne Makers 免费套餐固定部署在 ap-singapore，无法修改函数地域。对
+ * `drive-m.quark.cn`（阿里国内 CDN，dualstack）的实测结果：
  *
- * 仅在 Node 运行时生效；Cloudflare Workers / ESA 无 node:dns 时静默跳过。
+ *   defaultResultOrder : "verbatim"
+ *   lookup             : 203.119.146.33 (IPv4) → 2408:4001:f00::2b4 (IPv6)
+ *   TCP connect IPv4   : ok，但耗时 2300ms（跨境链路慢）
+ *   TCP connect IPv6   : ENETUNREACH（该出口无 IPv6 路由）
+ *   fetch              : 257ms 即失败，cause.code = ETIMEDOUT
+ *
+ * 关键点：**IPv4 本身是通的**，失败发生在 257ms ≈ Node 默认
+ * `autoSelectFamilyAttemptTimeout`（250ms）。Node 20 默认开启 Happy Eyeballs：
+ * 先连 IPv4，250ms 内没连上就并发去试 IPv6；而 IPv6 在此出口是
+ * ENETUNREACH，该错误被判定为致命，整条连接在 257ms 就被掐断 —— 根本没给
+ * IPv4 那 2300ms 的握手时间。
+ *
+ * 因此「DNS 改成 ipv4first」是无效的（lookup 本来就先返回 IPv4），必须
+ * **关掉 autoSelectFamily**，让 net.connect 只按解析顺序用 IPv4 单栈连接。
+ *
+ * ## 影响面
+ * - 仅 Node 运行时生效；Cloudflare Workers / ESA 无 node:net 时静默跳过。
+ * - 进程级设置，幂等。本部署内其余驱动的 API 端点均 IPv4 可达。
+ * - 保留 ipv4first：即使将来某个运行时仍启用 Happy Eyeballs，也优先 IPv4。
  */
-let ipv4FirstReady: Promise<void> | null = null
+let netStackReady: Promise<void> | null = null
 
-function ensureIpv4First(): Promise<void> {
-  if (ipv4FirstReady) return ipv4FirstReady
-  ipv4FirstReady = (async () => {
+function ensureIpv4Egress(): Promise<void> {
+  if (netStackReady) return netStackReady
+  netStackReady = (async () => {
     if (typeof process === "undefined" || !(process as any)?.versions?.node) {
       return
     }
+    // 1) DNS 解析优先 IPv4（保证 net.connect 拿到的首个地址是 IPv4）
     try {
       const dns: any = await import("node:dns")
       if (typeof dns?.setDefaultResultOrder === "function") {
@@ -46,8 +63,17 @@ function ensureIpv4First(): Promise<void> {
     } catch {
       // 非 Node 运行时或 polyfill 不支持时忽略
     }
+    // 2) 关闭 Happy Eyeballs —— 这是本次故障的直接原因
+    try {
+      const net: any = await import("node:net")
+      if (typeof net?.setDefaultAutoSelectFamily === "function") {
+        net.setDefaultAutoSelectFamily(false)
+      }
+    } catch {
+      // 同上
+    }
   })()
-  return ipv4FirstReady
+  return netStackReady
 }
 
 // ================================================================
@@ -168,8 +194,8 @@ export class QuarkClient {
     let lastErr: unknown
     for (let attempt = 0; attempt < 5; attempt++) {
       try {
-        // 首次请求时懒初始化 IPv4 优先（见 ensureIpv4First 注释：不能放顶层 await）
-        await ensureIpv4First()
+        // 首次请求时懒初始化网络栈（关闭 Happy Eyeballs，见 ensureIpv4Egress）
+        await ensureIpv4Egress()
         return await fetch(url, init)
       } catch (e) {
         lastErr = e
