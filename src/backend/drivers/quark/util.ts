@@ -137,12 +137,15 @@ export class QuarkClient {
   /**
    * fetch + 网络错误重试（仅连接层，瞬时故障恢复）。
    *
-   * 背景：EdgeOne Makers 免费/默认套餐的 Node 云函数固定部署在中国大陆以外
-   * （ap-singapore），出网访问夸克的国内阿里 CDN（drive-m.quark.cn）时，
-   * 跨境连接在 TCP/TLS 阶段被间歇性重置（实测 20 次请求 15 次失败，
-   * 失败耗时 ~1.5s，undici 抛 TypeError: fetch failed；同一代码在
-   * Cloudflare Workers 与国内线路上 0 失败）。失败呈短突发分布，
-   * 2 次快速重试即可把成功率拉回接近 100%。
+   * 线上证据（EdgeOne Makers ap-singapore，免费套餐地域锁定）：出网访问
+   * 夸克国内阿里 CDN（drive-m.quark.cn）时，跨境连接在 TCP/TLS 阶段
+   * 间歇性 ETIMEDOUT / ECONNRESET，且呈短突发分布（连续数秒到数十秒
+   * 的失败窗口，窗口内每次连接尝试均失败，窗口外连续成功）。同一代码
+   * 在 Cloudflare Workers 与国内线路上 0 失败。
+   *
+   * 策略：5 次尝试 + 指数退避（0.2/0.4/0.8/1.6s），可在一次失败突发
+   * 内完成恢复；IPv4 优先解析（见模块顶部的 setDefaultResultOrder）
+   * 已消除大部分失败，残余失败由本重试兜底。
    *
    * 语义：仅对「未收到 HTTP 响应」的网络层错误重试；任何已到达的
    * HTTP 状态（401/429/5xx 等）不在此重试，由调用方按业务语义处理，
@@ -153,17 +156,17 @@ export class QuarkClient {
     init: RequestInit,
   ): Promise<Response> {
     let lastErr: unknown
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < 5; attempt++) {
       try {
         return await fetch(url, init)
       } catch (e) {
         lastErr = e
-        if (attempt < 2) {
-          await new Promise((r) => setTimeout(r, 200 * (attempt + 1)))
+        if (attempt < 4) {
+          await new Promise((r) => setTimeout(r, 200 * 2 ** attempt))
         }
       }
     }
-    // 全部重试仍失败：透传 cause 诊断码（如 ECONNRESET），便于线上定位
+    // 全部重试仍失败：透传 cause 诊断码（如 ETIMEDOUT），便于线上定位
     const err = lastErr as any
     const causeCode = err?.cause?.code || err?.cause?.cause?.code
     if (causeCode) {
