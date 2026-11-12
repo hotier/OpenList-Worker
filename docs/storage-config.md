@@ -1,353 +1,128 @@
-# 存储后端配置指南（环境变量全集）
+# 环境变量（存储配置）
+
+> 本文仿照官方文档 [Environment Variables](https://doc.oplist.org/ecosystem/official_worker/guide_env)
+> 的结构编写，覆盖本仓库全部存储相关变量。
+
+## 配置变量
+
+### 必选变量
+
+必须配置这些参数：
+
+| 参数名 | 可选值 | 说明 |
+| --- | --- | --- |
+| `DB_FORMAT` | `map`（默认）、`key`、`sql` | 数据持久化格式 |
+| `DB_DRIVER` | `auto`（默认）、`blob`、`cfkv`、`kv`、`d1`、`do`、`mysql`、`postgres`、`turso` | 数据库存储位置 |
+
+### 安全变量
+
+除 `DB_FORMAT` 和 `DB_DRIVER` 外，强烈建议配置以下安全相关变量：
+
+| 变量 | 必要 | 说明 |
+| --- | --- | --- |
+| `JWT_SECRET` | 推荐 | JWT 签名密钥（≥16 字符），同时用于数据加密与定时任务鉴权；未配置时自动生成并持久化到存储 |
+| `ADMIN_PASS` | 可选 | 跳过安装向导，以该密码自动初始化 admin |
+| `ALLOW_URLS` | 可选 | CORS 允许白名单（逗号分隔） |
+
+### 其他可选变量
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `MAX_UPLOAD` | `26214400` | 单次整体上传（`/put`、`/form`）大小上限（字节） |
+| `MAX_UPPART` | `16777216` | 分片上传单片大小上限（字节） |
+| `ASSET_URLS` | — | 前端静态资源 CDN 地址，支持 `$version` 占位符 |
+| `ALLOW_SEED` | — | 允许作为种子数据来源的主机白名单 |
+| `DB_CIPHER` | `none` | 敏感字段（网盘凭据 / 2FA / 密码哈希）落盘算法：`none` / `aes-256-gcm` / `aes-256-gcm-pbkdf2` / `aes-256-cbc-hmac` / `chacha20-poly1305` / `des-cbc-hmac` / `3des-cbc-hmac` |
+| `OPENLIST_FORCE_IPV4_EGRESS` | — | 自托管 Node 遇到 250ms 量级 `ETIMEDOUT` 时设为 `1`（仅 EdgeOne 云函数自动生效，其它平台默认不改变行为） |
+
+## 不同存储格式差异
+
+| `DB_FORMAT` 类型 | 描述 |
+| --- | --- |
+| `map` | 所有数据存储为一个 JSON，每次访问都需要全部读取，性能较差，但兼容性好 |
+| `key` | 单条数据存储为 Key-Value，按需读取，兼容性和性能还行，但不支持索引 |
+| `sql` | 数据存储为 SQL-Table，与 Go 后端完全一致，支持索引，功能齐全，但多次读取耗时长 |
+
+## 不同存储驱动差异
+
+| `DB_DRIVER` 类型 | 支持平台 | 说明 |
+| --- | --- | --- |
+| `auto` | 通用 | 自动检测，优先级：mysql → postgres → turso（需配置连接信息）→ d1 → kv → cfkv → blob → do → memory |
+| `blob` | EdgeOne / ESA | EdgeOne 或阿里云 ESA Blob 提供的持久化工具，免费 |
+| `cfkv` | 通用 | Cloudflare KV REST API，适用于没有持久化的平台远程调用 |
+| `kv` | CF、EO、ESA | KV 数据库，速度快，免费 |
+| `d1` | CF | D1 数据库，仅支持 Cloudflare |
+| `do` | CF | DO 持久化对象，仅支持 Cloudflare |
+| `mysql` | Node | 连接到自己的 MySQL 数据库（Workers 无法直连 TCP） |
+| `postgres` | Node | 连接到自己的 PostgreSQL 数据库（Workers 无法直连 TCP） |
+| `turso` | 通用 | Turso / libSQL，走 HTTP API，全平台可用（含 Workers） |
+
+## 可选有效组合变量
+
+| `DB_FORMAT` | `DB_DRIVER` | 说明 |
+| --- | --- | --- |
+| `map` | `auto` | 数据存储为 JSON，自动根据部署环境选择 blob、kv、d1 |
+| `map` | `blob` | 数据存储为 JSON，使用 EdgeOne / ESA Blob 持久化存储（推荐） |
+| `map` | `cfkv` | 数据存储为 JSON，在非 CF Worker 环境使用远程 CF KV 存储 |
+| `map` | `kv` | 数据存储为 JSON，在 CF Worker 环境使用 KV 存储（推荐） |
+| `map` | `d1` | 数据存储为 JSON，在 CF Worker 环境使用 D1 存储（不推荐） |
+| `map` | `do` | 数据存储为 JSON，在 CF Worker 环境使用 DO 存储（不推荐，可能付费） |
+| `key` | `kv` | 数据存储为 Key-Value，在 CF Worker 环境使用 KV 存储（推荐） |
+| `key` | `d1` | 数据存储为 Key-Value，在 CF Worker 环境使用 D1 存储（推荐） |
+| `key` | `mysql` | 数据存储为 Key-Value，使用 MySQL 存储（不推荐） |
+| `sql` | `d1` | 数据存储为 SQL-Table，在 CF Worker 环境使用 D1 存储（推荐） |
+| `sql` | `mysql` | 数据存储为 SQL-Table，使用 MySQL 存储 |
+| `sql` | `postgres` | 数据存储为 SQL-Table，使用 PostgreSQL 存储 |
+| `sql` | `turso` | 数据存储为 SQL-Table，使用 Turso / libSQL 存储 |
+| `map` | `postgres` | 数据存储为 JSON，使用 PostgreSQL 存储 |
+| `map` | `turso` | 数据存储为 JSON，使用 Turso / libSQL 存储 |
+| `key` | `postgres` | 数据存储为 Key-Value，使用 PostgreSQL 存储 |
+| `key` | `turso` | 数据存储为 Key-Value，使用 Turso / libSQL 存储 |
+
+## 远程数据库配置项
+
+如果您绑定了 `cfkv`，则需要设置相关变量：
+
+| 变量 | 说明 |
+| --- | --- |
+| `CF_ACCOUNT` | Cloudflare 账号 ID |
+| `CF_KV_UUID` | Cloudflare 绑定的 KV ID |
+| `CF_API_KEY` | Cloudflare 具有 KV 权限的 Token |
+
+如果您绑定了 MySQL，则需要设置相关变量：
+
+| 变量 | 说明 |
+| --- | --- |
+| `MYSQL_URLS` | 地址串，例如：`mysql://user:pass@host:3306/db`，配置后则不需要配置下方变量 |
+| `MYSQL_HOST` | 数据库地址 |
+| `MYSQL_PORT` | 数据库端口（3306） |
+| `MYSQL_USER` | 数据库用户 |
+| `MYSQL_PASS` | 数据库密码 |
+| `MYSQL_NAME` | 数据库名称 |
 
-> 适用版本：DB_DRIVER 新增 `turso` / `postgres` 之后（commit `37a38ef`）。
-> 本文是**存储维度**的环境变量全集与配置条件；站点级变量（站点名、CDN、种子等）
-> 见 [.env.example](../.env.example)。
+如果您绑定了 Turso，则需要设置相关变量：
 
-## 一、三分钟速查
+| 变量 | 说明 |
+| --- | --- |
+| `TURSO_DATABASE_URL` | 数据库地址，例如：`https://my-db-myorg.turso.io`（也接受 `libsql://…`） |
+| `TURSO_AUTH_TOKEN` | 数据库访问令牌（`turso db tokens create <db>`） |
 
-### 1. 选驱动（DB_DRIVER）
+如果您绑定了 PostgreSQL，则需要设置相关变量：
 
-| 平台 | 推荐驱动 | 可用驱动 | 不可用驱动 |
-|---|---|---|---|
-| **Cloudflare Workers** | `d1` | `d1` `kv` `cfkv` `do` `turso` | `blob` `mysql` `postgres` `memory` |
-| **EdgeOne Node 云函数** | `blob` | `blob` `kv`(代理) `cfkv` `turso` | `d1` `do` `mysql` `postgres` `memory` |
-| **EdgeOne Edge Functions** | — | 只承载 KV 代理（`functions/kv-*`），不跑主应用 | — |
-| **阿里云 ESA** | `blob` | `blob` `turso` | `d1` `kv` `cfkv` `do` `mysql` `postgres` `memory` |
-| **自托管 Node**（`npm start` / Docker / Vercel Node） | `postgres` | `postgres` `turso` `cfkv` `kv`(若可用) `memory`(仅本地) | `d1` `do` `blob` `mysql`¹ |
+| 变量 | 说明 |
+| --- | --- |
+| `PG_URL` | 地址串，例如：`postgresql://user:pass@host:5432/db?sslmode=require`，配置后则不需要配置下方变量 |
+| `PG_HOST` | 数据库地址 |
+| `PG_PORT` | 数据库端口（5432） |
+| `PG_USER` | 数据库用户 |
+| `PG_PASSWORD` | 数据库密码 |
+| `PG_DATABASE` | 数据库名称 |
+| `PG_SSL` | 托管库设为 `true`（加密但不校验证书链）；本地 / 内网默认关闭 |
 
-¹ MySQL 依赖的 `mysql2` 在 esbuild 构建时被打桩替换（`scripts/build-edge.mjs`
-的 `emptyNodeDriverPlugin`，因为它带原生二进制），因此 **esbuild 产物里 MySQL
-驱动不可用**。PostgreSQL 使用的 `pg` 是纯 JS，已改为 **external** 而非打桩，
-所以自托管（node_modules 存在）可用。
+> `DATABASE_URL` 同样可作为 PostgreSQL 连接串，但仅在显式 `DB_DRIVER=postgres`
+> 时生效 —— `auto` 探测不读取它，避免误连 PaaS 注入的无关数据库。
 
-> 边缘环境想用 SQLite 语义的数据库 → 选 `turso`（HTTP API，纯 fetch，
-> 零依赖零 wasm）；Cloudflare 上想用 SQLite 语义 → 选 `d1`。
+## 与 Go 后端共享数据库
 
-### 2. 三层正交变量
-
-```
-DB_DRIVER   →  存到哪里（驱动层）
-DB_FORMAT   →  怎么组织数据（格式层）
-DB_CIPHER   →  敏感字段如何落盘（加密层，与上面两维正交）
-```
-
-| 变量 | 取值 | 默认 | 说明 |
-|---|---|---|---|
-| `DB_DRIVER` | `auto` `blob` `cfkv` `kv` `d1` `do` `mysql` `postgres` `turso` `memory` | `auto` | `auto` 自动探测；`memory` 仅本地 Node |
-| `DB_FORMAT` | `map` `key` `sql` | `map` | 与驱动正交，缺省一律 map（详见下文「格式」） |
-| `DB_CIPHER` | `none` `aes-256-gcm` `aes-256-gcm-pbkdf2` `aes-256-cbc-hmac` `chacha20-poly1305` `des-cbc-hmac` `3des-cbc-hmac` | `none` | 只影响敏感字段（网盘凭据、2FA、密码哈希）的落盘形态 |
-
----
-
-## 二、每个驱动的配置条件
-
-### auto（默认）
-
-无需任何变量。按下方「自动探测顺序」依次探测，全部不可用时：
-
-- **Serverless 环境**：直接报 `NO_STORAGE`，**绝不静默回退内存**（内存写入会随实例销毁而丢失，却返回成功）
-- **本地/容器**：回退 `memory`（便于开发调试，数据不持久）
-
-### blob（EdgeOne / ESA 平台存储）
-
-| 变量 | 必填条件 | 说明 |
-|---|---|---|
-| （无环境变量） | 需要 EdgeOne Blob SDK 存在于运行时，或 ESA 的 `ESA_BLOB` 绑定 | 平台自动注入，配置 `DB_DRIVER=blob` 即可 |
-
-- 仅支持 `DB_FORMAT=map`（Blob 是单文档存储，key 格式摊平后无法落盘）
-- 平台矩阵：EdgeOne Node 云函数 ✅ / ESA ✅ / Cloudflare ❌
-
-### kv（KV 语义，含 Cloudflare 绑定与 EdgeOne 代理两种形态）
-
-| 变量 | 必填条件 | 说明 |
-|---|---|---|
-| KV 绑定 `KV` | Cloudflare Workers：wrangler.jsonc 里 `"kv_namespaces": [{"binding":"KV"}]` | 本地绑定优先，速度最快 |
-| `EO_KV_URLS` | EdgeOne Node 云函数：**KV 绑定不会注入 Node 函数**，必须经同部署的 Edge Functions 代理 | 留空自动用当前请求 origin（同部署自调用）；跨域/本地调试才需显式设置 |
-| `JWT_SECRET` | EdgeOne 代理形态下必填，且必须与 Edge Function 侧**完全一致** | 不一致时表现为 HTTP 401 |
-
-- 支持 `DB_FORMAT=map` / `key`
-- 平台矩阵：Cloudflare ✅（绑定）/ EdgeOne ✅（代理）/ ESA ❌
-
-### cfkv（Cloudflare KV REST API，跨平台）
-
-| 变量 | 必填条件 | 说明 |
-|---|---|---|
-| `CF_ACCOUNT`（或 `CLOUDFLARE_ACCOUNT_ID`） | 三项均必填 | 账户 ID |
-| `CF_KV_UUID`（或 `CLOUDFLARE_KV_NAMESPACE_ID`） | 三项均必填 | KV namespace ID |
-| `CF_API_KEY`（或 `CLOUDFLARE_API_TOKEN`） | 三项均必填 | 需 KV 读写权限 |
-
-- 走 REST API，**任何有外网 fetch 的运行时都能用**（EdgeOne / ESA / 自托管）
-- 支持 `DB_FORMAT=map` / `key`
-
-### d1（Cloudflare D1，SQLite）
-
-| 变量/绑定 | 必填条件 | 说明 |
-|---|---|---|
-| D1 绑定 `DB`（或 `OPENLIST_DB`） | wrangler.jsonc：`"d1_databases": [{"binding":"DB", ...}]` | 绑定缺失即 `DRIVER_UNAVAILABLE` |
-
-- 支持 `map` / `key` / `sql`
-- 仅 Cloudflare Workers 可用；EdgeOne / ESA 无 D1
-- 单条语句绑定参数上限 100，超限会在构建期被 `format/sql.ts` 的分片逻辑规避
-
-### do（Cloudflare Durable Objects，SQLite）
-
-| 变量/绑定 | 必填条件 | 说明 |
-|---|---|---|
-| DO 绑定 `DO` | wrangler.jsonc：`"durable_objects": {"bindings":[{"name":"DO","class_name":"..."}]}` + 迁移 | 需平台迁移声明 |
-
-- 支持 `map` / `key` / `sql`；仅 Cloudflare
-
-### mysql（MySQL / MariaDB）
-
-| 变量 | 必填条件 | 说明 |
-|---|---|---|
-| `MYSQL_URLS` | 二选一必填 | 连接串：`mysql://user:pass@host:3306/db` |
-| `MYSQL_HOST` + `MYSQL_PORT` + `MYSQL_USER` + `MYSQL_PASS` + `MYSQL_NAME` | 二选一必填 | 分项配置（`MYSQL_PORT` 默认 3306） |
-
-- ⚠️ **esbuild 产物里不可用**：`mysql2` 带原生二进制依赖，构建时被 `emptyNodeDriverPlugin` 打桩替换。只有直接以源码运行（`tsx src/…`）才可用
-- 仅 Node 运行时；Workers 无法对 MySQL 开 TCP
-- 支持 `map` / `key` / `sql`
-
-### postgres（通用 PostgreSQL，Node 运行时）
-
-| 变量 | 必填条件 | 说明 |
-|---|---|---|
-| `PG_URL` | 与 `PG_HOST` 二选一必填 | 连接串：`postgresql://user:pass@host:5432/dbname?sslmode=require`；**优先级最高**（托管库的 sslmode 等参数分项表达不了） |
-| `DATABASE_URL` | 仅**显式** `DB_DRIVER=postgres` 时生效 | Neon / Supabase / Railway / Heroku 等平台的通用变量名。⚠️ **auto 探测刻意不认它**——老部署的环境里可能恰好存在一个与本应用无关的 `DATABASE_URL`，若 auto 据此切换落盘位置属于破坏性变更。显式指定时才会被读取 |
-| `PG_HOST` + `PG_PORT` + `PG_USER` + `PG_PASSWORD` + `PG_DATABASE` | 连接串未设置时必填 | 分项配置（`PG_PORT` 默认 5432） |
-| `PG_SSL` | 分项模式 + 托管库时建议 `true` | 以 `rejectUnauthorized:false` 连接（等同 `sslmode=require`：加密但不校验证书链，兼容自签/中间证书）。默认关闭——本地/内网 PG 通常无证书，强制 TLS 会连不上 |
-
-- 仅 **Node 运行时**可用（`pg` 需 TCP；Workers 无法直连 PG 端口）
-- ⚠️ **EdgeOne 云函数不可用**：产物不含 node_modules，运行时会得到可读的「pg 未安装」错误。边缘环境请改 `turso`
-- 自托管 / Docker / Vercel Node 可用（`pg` 已声明为依赖且保持 external，运行时从 node_modules 解析）
-- 支持 `map` / `key` / `sql`
-
-### turso（libSQL，SQLite 方言，HTTP API）
-
-| 变量 | 必填条件 | 说明 |
-|---|---|---|
-| `TURSO_DATABASE_URL` | 两项均必填 | 数据库 HTTPS 端点：`https://<db>-<org>.turso.io`；也接受 `libsql://…`（自动改写为 https） |
-| `TURSO_AUTH_TOKEN` | 两项均必填 | 数据库访问令牌（`turso db tokens create <db>`） |
-
-- **零依赖**：走 HTTP Pipeline API（`POST /v2/pipeline`），纯 fetch，无 wasm 无原生模块
-- **全平台可用**：Cloudflare Workers ✅ / EdgeOne 云函数 ✅ / ESA ✅ / 自托管 ✅
-- SQLite 方言（`INSERT OR REPLACE`、反引号标识符），与 D1/DO 共用同一套格式层
-- 支持 `map` / `key` / `sql`
-- 单语句绑定参数上限按 999 处理（SQLite 编译期默认值）
-- `batch()` 用显式 `BEGIN/COMMIT` 包在同一个 pipeline 里，保证原子性
-
-### memory（仅本地）
-
-`DB_DRIVER=memory` 是合法驱动名，但**只在本地 Node 运行时有效**：
-
-- 本地：可用，数据随进程结束丢失（开发调试用）
-- Serverless：直接抛 `NO_STORAGE`（内存写入会静默丢失却返回成功，属于最危险的假象）
-
----
-
-## 三、自动探测顺序（DB_DRIVER=auto）
-
-只有**显式配置了连接信息**的网络型驱动才参与探测（无配置时探测只会产生
-无谓的 TCP/HTTP 超时开销）：
-
-```
-1. mysql    （需 MYSQL_URLS 或 MYSQL_HOST）
-2. postgres （需 PG_URL 或 PG_HOST —— 注意：DATABASE_URL 不参与 auto 探测，
-              仅显式 DB_DRIVER=postgres 时生效，避免误连 PaaS 的无关数据库）
-3. turso    （需 TURSO_DATABASE_URL + TURSO_AUTH_TOKEN）
-4. d1       （本地绑定探测，代价极低）
-5. kv       （本地绑定探测）
-6. cfkv     （本地绑定探测）
-7. blob     （本地绑定探测）
-8. do       （本地绑定探测）
-```
-
-- 命中第一个可用驱动即停止（日志：`[DB] Auto-detected driver: …`）
-- 全部不可用：Serverless 报 `NO_STORAGE`；本地回退 `memory`
-- **显式指定 `DB_DRIVER` 永不回退**：指定了但不可用时直接报错，并把
-  「auto 会选中谁」写进错误信息，绝不把数据写到别的后端（避免网络抖动
-  引发数据分裂）
-
----
-
-## 四、数据格式（DB_FORMAT）
-
-| 格式 | 存储形态 | 适用驱动 | 说明 |
-|---|---|---|---|
-| `map` | 整个配置对象序列化为一个 JSON 值 | 全部 | 默认。读写最简单，每次保存全量写回 |
-| `key` | 按表拆成多条记录（每实体一 key） | KV 语义 + SQL 语义驱动 | 减小单值体积；注意 `DB_FORMAT=kv 且无 DB_FORMAT → key` 的旧兼容映射**已移除**，分表请显式设置 |
-| `sql` | 列式表（与 Go 后端 GORM 表结构一致） | 仅 `d1` `do` `mysql` `postgres` `turso` | 表名：`x_setting_items` / `x_storages` / `x_users` / `x_sharing_dbs` / `x_metas` / `x_plugins`（前缀固定 `x_`） |
-
-**驱动 × 格式白名单**（非法组合在解析期即拒绝，不会等到运行时才炸）：
-
-| 驱动 | 支持格式 |
-|---|---|
-| `blob` | `map` |
-| `kv` `cfkv` `memory` | `map` `key` |
-| `d1` `do` `mysql` `postgres` `turso` | `map` `key` `sql` |
-
----
-
-## 五、字段加密（DB_CIPHER）
-
-只影响敏感字段落盘形态，与存储位置无关。历史密文带 `enc:vN:` 前缀，
-读取时按前缀自动识别，**从加密切回 `none` 不会导致旧数据不可读**，只是
-下次写入转为明文（自动迁移）。
-
-| 值 | 算法 | 说明 |
-|---|---|---|
-| `none`（默认） | 不加密 | 静态可读；与 Go 共享库 / 直接 SQL 查询无障碍 |
-| `aes-256-gcm` | HKDF-SHA256 派生 AES-256-GCM（`enc:v2:`） | 推荐 |
-| `aes-256-gcm-pbkdf2` | PBKDF2-SHA256（10 万次）（`enc:v1:`） | 兼容旧数据，慢 |
-| `aes-256-cbc-hmac` | AES-256-CBC + HMAC（`enc:v3:`） | Encrypt-then-MAC |
-| `chacha20-poly1305` | ChaCha20-Poly1305 纯 JS（`enc:v4:`） | 无 AES 硬件加速的运行时 |
-| `des-cbc-hmac` | 单 DES 56-bit（`enc:v5:`） | **仅兼容，不安全** |
-| `3des-cbc-hmac` | 3DES（`enc:v6:`） | **仅兼容，已弃用** |
-
----
-
-## 六、JWT_SECRET（共享密钥）
-
-| 形态 | 必填条件 |
-|---|---|
-| Cloudflare Workers | 建议在 wrangler.jsonc / 面板中设置；未设置时安装向导会自动生成并持久化到存储 |
-| EdgeOne（Node 云函数 + Edge Functions 代理 KV） | **必须两端一致**，否则 KV 代理返回 401 |
-| 任意多实例部署 | 强烈建议显式设置，避免各实例/冷启动各生成一把导致令牌随机失效 |
-
-生成方式：`openssl rand -hex 32`
-
-> 注意：`DB_CIPHER=none` 只表示「数据库字段不加密」；JWT 签名仍然需要
-> 这把密钥。加密密钥与签名密钥由同一变量派生（见 `pkg/crypto.ts`）。
-
----
-
-## 七、与 Go 后端共享物理库
-
-`sql` 格式的表结构、表名（`x_` 前缀 + GORM 复数名）、列名（对齐 Go 的
-json tag）与 Go 后端完全一致，因此 D1 / MySQL / PostgreSQL / Turso 的库
-可以与 Go 版 OpenList 共用：
-
-- TS 侧**只读写** `TABLE_NAMES`（settings/storages/users/shares/metas/plugins）
-- `sshkeys` 表**只建表不读写**：TS 把公钥存在 `users.ssh_keys` 内；纳入
-  往返会在 save 时 `DELETE` 后写空数组，清空 Go 侧写入的公钥（已刻意排除）
-- 加密建议 `DB_CIPHER=none`，否则 Go 侧读到的敏感字段是密文
-
----
-
-## 八、诊断与常见错误码
-
-`/api/public/env_check` 返回 `storage.error_code`，配合 `summary` /
-`suggestion` 使用：
-
-| 错误码 | 含义 | 典型原因 |
-|---|---|---|
-| `NO_STORAGE` | 没有任何可用后端 | serverless 下什么都没配；auto 探测全部失败 |
-| `DRIVER_UNAVAILABLE` | 显式指定的驱动不可用 | 绑定缺失 / 凭据没配 / 运行时限制（如 Workers 上配 postgres） |
-| `INVALID_COMBINATION` | 驱动 × 格式非法 | 如 `DB_FORMAT=sql` + `DB_DRIVER=kv`；blob 只支持 map |
-| `UNKNOWN_DRIVER` | DB_DRIVER 拼错 | 不在合法取值列表里 |
-| `PROXY_CONFIG` | EdgeOne KV 代理配置错误 | `EO_KV_URLS` 缺失/不对 |
-| `HEALTH_ERROR` | 驱动自检失败 | 连接不通 / 鉴权失败（健康检查会带原始错误） |
-
-> 显式指定驱动不可用时，错误信息里会带一行
-> `Auto-detection would pick: DB_DRIVER=xxx`，直接抄成配置即可修复；
-> 诊断字段 `storage.suggestion` 也会单独给一句话建议（前端显眼展示）。
-
----
-
-## 九、完整配置示例
-
-### Cloudflare Workers（D1 + sql 格式）
-
-```jsonc
-// wrangler.jsonc
-{
-  "vars": {
-    "ENVIRONMENT": "production",
-    "DB_FORMAT": "sql",
-    "DB_DRIVER": "d1",
-    "DB_CIPHER": "none",
-    "JWT_SECRET": "<openssl rand -hex 32>"
-  },
-  "d1_databases": [{ "binding": "DB", "database_name": "opnelist", "database_id": "…" }],
-  "kv_namespaces": [{ "binding": "KV", "id": "…" }]
-}
-```
-
-### EdgeOne Node 云函数（Blob）
-
-```
-DB_DRIVER=blob
-DB_FORMAT=map
-DB_CIPHER=none
-JWT_SECRET=<openssl rand -hex 32>
-```
-
-### Turso（全平台通用）
-
-```
-DB_DRIVER=turso
-DB_FORMAT=sql
-DB_CIPHER=none
-JWT_SECRET=<openssl rand -hex 32>
-TURSO_DATABASE_URL=https://my-db-myorg.turso.io
-TURSO_AUTH_TOKEN=eyJ…
-```
-
-### 自托管 Node / Docker（PostgreSQL）
-
-```
-DB_DRIVER=postgres
-DB_FORMAT=sql
-DB_CIPHER=none
-JWT_SECRET=<openssl rand -hex 32>
-PG_URL=postgresql://user:pass@db.internal:5432/openlist?sslmode=require
-```
-
-分项写法：
-
-```
-DB_DRIVER=postgres
-DB_FORMAT=map
-PG_HOST=db.internal
-PG_PORT=5432
-PG_USER=openlist
-PG_PASSWORD=…
-PG_DATABASE=openlist
-PG_SSL=true
-```
-
----
-
-## 十、网络出网行为说明（夸克等国内网盘驱动）
-
-EdgeOne Makers 免费套餐的 Node 云函数固定部署在海外（ap-singapore），且
-**不支持修改函数地域**。Node 20 默认开启 Happy Eyeballs（`autoSelectFamily`）：
-对双栈域名先连 IPv4，250ms 内没连上就并发试 IPv6。而该出口**没有 IPv6 路由**
-（实测 ENETUNREACH），一旦触发并发尝试，整条连接会在 ~257ms 被掐断——
-即便 IPv4 本身 400~2300ms 内能握手成功。表现为夸克驱动的
-`fetch failed（ETIMEDOUT）`。
-
-驱动层（`src/backend/drivers/quark/util.ts`）的处置：
-
-- **仅 EdgeOne Node 云函数运行时**自动关闭 Happy Eyeballs（`net.setDefaultAutoSelectFamily(false)`）
-  并将 DNS 解析顺序设为 `ipv4first`。该出口 IPv6 本就不可路由，双栈回退
-  在此零价值，关闭是纯收益、零回归。
-- **其它平台（Cloudflare / ESA / 自托管）保持 Node 默认网络行为不变**——
-  这是兼容性硬约束：自托管场景若失去「IPv4 坏时回退 IPv6」的能力，
-  会把原本可用的 IPv6-only / IPv6-优先目标变成不可用。
-- 自托管用户若遇到同样的跨境问题（症状同为 250ms 量级的 ETIMEDOUT），
-  可显式设置 `OPENLIST_FORCE_IPV4_EGRESS=1` 选择加入；不设置则行为与
-  原仓库完全一致。
-- 配合驱动内 5 次指数退避重试（仅对「未收到 HTTP 响应」的连接层错误，
-  不重试任何已到达的 HTTP 状态），实测夸克目录列表 12/12 成功。
-
----
-
-## 十一、变更记录
-
-| 版本 | 变更 |
-|---|---|
-| `abd8881` | 新增本文档；README 驱动列表同步 |
-| `37a38ef` | 新增 `turso`（libSQL HTTP API，零依赖全平台）与 `postgres`（pg，Node）驱动；`Driver` 接口增加 `dialect` / `maxBindParams`；`format/sql.ts` 支持三方言（引号/占位符/UPSERT）；PG bool 列用原生 BOOLEAN；驱动 × 格式白名单与诊断文案同步更新 |
-| `a9237cb`→`593bd05` | 修复夸克驱动的 EdgeOne 跨端连接问题：关闭 Happy Eyeballs（仅 EdgeOne 运行时生效）+ 连接层重试；自托管/其它平台行为不变，可用 `OPENLIST_FORCE_IPV4_EGRESS=1` 选择加入 |
+`sql` 格式的表名与结构（`x_` 前缀）与 Go 后端完全一致，可共用同一物理库。
+字段加密（`DB_CIPHER`）建议保持 `none`，否则 Go 侧读到的敏感字段为密文。
