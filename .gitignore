@@ -102,3 +102,6 @@ docs/code-review-*.md
 wrangler.d1.jsonc
 .wrangler-dryrun/
 .tmp-dryrun/
+
+# EdgeOne CLI 本地状态（含项目链接信息，不入库）
+.edgeone/
