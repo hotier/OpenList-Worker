@@ -2,15 +2,24 @@
 // OpenList-TSWorker · Cloudflare Workers 配置
 // 文档：https://developers.cloudflare.com/workers/wrangler/configuration/
 //
-// ⚠️ 重要：D1 / KV 等「绑定」必须写在本文件里。
-//   wrangler deploy 会用本文件的 bindings 覆盖线上，keep_vars 只保护明文变量、
-//   不保护绑定；若本文件不声明绑定，部署会把线上的 D1/KV 绑定删除。
-//   因此绑定在此声明，保证每次自动部署都保留。
+// ⚠️ 变量与绑定的归属约定（本仓库当前策略）
 //
-// 普通变量（DB_* 等）也可在此声明以固化；面板上的同名明文变量会被本文件覆盖。
+//   1. 存储相关变量（DB_DRIVER / DB_FORMAT / DB_CIPHER / TURSO_* / JWT_SECRET …）
+//      一律在 **Cloudflare 面板 / `wrangler secret put`** 管理，**不在本文件声明**。
+//      原因：本文件里声明的明文 var 会在每次自动部署时覆盖面板上的同名变量，
+//      导致「面板改了却被打回原值」。keep_vars 只对**未在 vars 中声明**的变量
+//      生效（见下方 keep_vars 说明）。
 //
-// Secret（JWT_SECRET / ADMIN_PASS / ALLOW_URLS / MYSQL_URLS / EO_KV_URLS / CF_* 等）
-// 不会被 wrangler deploy 覆盖，保持面板/secret 管理即可。
+//   2. 本项目当前使用 Turso（HTTP API）作为存储，**不再使用 D1 / KV 绑定**。
+//      因此下方已移除 d1_databases / kv_namespaces 声明 —— 否则每次部署都会
+//      重新要求这两个绑定存在，且会在线上留下无用绑定。
+//      如需回退到 D1/KV，请在此重新声明对应绑定（声明即生效）。
+//
+//   3. 绑定（binding）不受 keep_vars 保护：wrangler deploy 用本文件的 bindings
+//      覆盖线上。所以**绑定必须写在本文件里**，否则部署会把线上绑定删掉。
+//
+//   4. Secret（JWT_SECRET / ADMIN_PASS / ALLOW_URLS / TURSO_AUTH_TOKEN / CF_* 等）
+//      由 `wrangler secret put` 管理，wrangler deploy 不会覆盖。
 // =============================================================================
 {
   "name": "openlist-worker",
@@ -27,6 +36,9 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
   "preview_urls": false,
+  // keep_vars: true —— 部署时保留线上已存在、但本文件 vars 中**未声明**的变量。
+  // 这是「面板上设置的环境变量不会被后续部署覆盖」的保证。
+  // 反过来说：本文件 vars 里声明过的名字，部署时一定会被文件里的值覆盖。
   "keep_vars": true,
   "assets": {
     "directory": "./dist",
@@ -35,31 +47,40 @@
   },
 
   // ===========================================================================
-  // 普通环境变量（vars）：在此固化，保证每次部署结果稳定。
+  // 普通环境变量（vars）：明文、非敏感，在此固化以保证每次部署结果稳定。
+  //
+  // ⚠️ 只放**非密文**（驱动名、格式这类确定值）。敏感项一律走
+  //    `wrangler secret put` / 面板 Secret，不放这里：
+  //      JWT_SECRET / TURSO_AUTH_TOKEN / TURSO_DATABASE_URL（含 token 语义）
+  //
+  // ⚠️ 注意 keep_vars 的边界：本文件 vars 中**声明过的名字**，部署时一定被
+  //    文件值覆盖；只有**未声明**的变量才由 keep_vars 保护。
+  //    因此这里只固化确定值，其余变量留给面板/secret 管理。
   // ===========================================================================
   "vars": {
     "ENVIRONMENT": "production",
+    // 存储：Turso（libSQL HTTP API）+ 列式表（与 Go 后端表结构一致）。
+    // 连接串与令牌见 secret：TURSO_DATABASE_URL / TURSO_AUTH_TOKEN。
+    "DB_DRIVER": "turso",
     "DB_FORMAT": "sql",
-    "DB_DRIVER": "d1",
     "DB_CIPHER": "none"
-  },
+  }
 
   // ===========================================================================
-  // 存储绑定：必须声明，否则部署会删除线上绑定。
+  // 存储绑定：当前使用 Turso，故不再声明 D1 / KV。
+  // 若需回退，取消下面注释即可（声明后部署会重新创建/校验该绑定）：
+  //
+  // "d1_databases": [
+  //   {
+  //     "binding": "DB",
+  //     "database_name": "opnelist",
+  //     "database_id": "9f53029f-95a9-4257-86d0-3d6d05dff113"
+  //   }
+  // ],
+  // "kv_namespaces": [
+  //   { "binding": "KV", "id": "111a57d369a041b8a2940ff65aef81dc" }
+  // ]
   // ===========================================================================
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "opnelist",
-      "database_id": "9f53029f-95a9-4257-86d0-3d6d05dff113"
-    }
-  ],
-  "kv_namespaces": [
-    {
-      "binding": "KV",
-      "id": "111a57d369a041b8a2940ff65aef81dc"
-    }
-  ]
 }
 
 
