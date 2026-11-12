@@ -53,8 +53,8 @@
 | `kv` | CF、EO、ESA | KV 数据库，速度快，免费 |
 | `d1` | CF | D1 数据库，仅支持 Cloudflare |
 | `do` | CF | DO 持久化对象，仅支持 Cloudflare |
-| `mysql` | Node | 连接到自己的 MySQL 数据库（Workers 无法直连 TCP） |
-| `postgres` | Node | 连接到自己的 PostgreSQL 数据库（Workers 无法直连 TCP） |
+| `mysql` | 自托管 Node（源码运行） | 连接到自己的 MySQL。⚠️ 构建产物中 `mysql2` 被打桩（原生依赖防护），`npm start` 与各边缘平台均不可用 |
+| `postgres` | 自托管 Node / Docker / Vercel Node | 连接到自己的 PostgreSQL。Workers 无原始 TCP socket（V8 isolate，非 Node 进程）；EdgeOne 云函数产物不含 node_modules（`pg` 为 external） |
 | `turso` | 通用 | Turso / libSQL，走 HTTP API，全平台可用（含 Workers） |
 
 ## 可选有效组合变量
