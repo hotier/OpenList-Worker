@@ -13,6 +13,33 @@ import {
   QuarkVariant,
 } from "./types"
 
+/**
+ * IPv4 优先解析（仅 Node 运行时，幂等全局设置）。
+ *
+ * 线上证据（EdgeOne Makers ap-singapore，免费套餐地域锁定）：
+ * 访问 drive-m.quark.cn（阿里国内 CDN，dualstack：A 203.119.169.64 /
+ * AAAA 2408:4001:f00::27e）时连接层间歇性 ETIMEDOUT，失败呈突发分布
+ * （实测连续 5+ 次超时后恢复；IPv4 直连该域名 10/10 正常、延迟 0.2s）。
+ * 高概率为海外节点 IPv6 出网到国内 IPv6 侧被黑洞/丢包；把 DNS 解析
+ * 顺序设为 IPv4 优先后，即使运行时未启用 Happy Eyeballs 回退，也会
+ * 先走 IPv4 直连，消除该失败模式。
+ *
+ * 说明：
+ * - setDefaultResultOrder 是进程级一次性设置，重复调用无害；
+ * - 仅在 Node 运行时生效；Cloudflare Workers / ESA 边缘无 node:dns
+ *   （或为 polyfill），动态导入失败时静默忽略，不影响其它平台；
+ * - 影响面：本 isolate 内所有出网解析的地址族优先级，其余驱动的
+ *   API 端点均为 IPv4 可达（已实测），风险极低。
+ */
+if (typeof process !== "undefined" && (process as any)?.versions?.node) {
+  try {
+    const dns = await import("node:dns")
+    dns.setDefaultResultOrder("ipv4first")
+  } catch {
+    // 非 Node 运行时或 polyfill 不支持时忽略
+  }
+}
+
 // ================================================================
 // Variant configurations (Quark vs UC)
 // ================================================================
