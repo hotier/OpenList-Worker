@@ -145,8 +145,8 @@ pnpm run deploy:worker
 ## 部署配置
 
 > 存储相关环境变量（`DB_DRIVER` / `DB_FORMAT` / `DB_CIPHER` 与各驱动连接配置）
-> 的完整说明与平台可用性矩阵见相对路径文档：
-> [`./docs/storage-config.md`](./docs/storage-config.md)
+> 的完整说明与平台可用性矩阵见：
+> [存储后端配置指南（环境变量全集）](./docs/storage-config.md)
 
 部署完成后请设置如下变量：
 
@@ -158,7 +158,7 @@ pnpm run deploy:worker
 | `DB_CIPHER` | `none` | 敏感字段落盘算法，如 `aes-256-gcm` |
 
 各驱动的环境变量与配置条件、平台可用性矩阵（Cloudflare / EdgeOne / ESA /
-自托管）见相对路径文档 [`./docs/storage-config.md`](./docs/storage-config.md)。
+自托管）见：[存储后端配置指南（环境变量全集）](./docs/storage-config.md)。
 
 完整环境变量，请参阅[配置变量](https://doc.oplist.org/ecosystem/official_worker/guide_env)
 
