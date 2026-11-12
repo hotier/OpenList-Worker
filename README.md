@@ -144,31 +144,23 @@ pnpm run deploy:worker
 
 ## 部署配置
 
-OpenList 的所有数据（账号、网盘挂载、分享、站点设置）都保存在一个数据库里。
-通过下面几个环境变量决定「数据存在哪里、怎么存」。变量填在部署平台的环境
-变量面板中即可（Cloudflare Workers 的 `vars`、EdgeOne 的环境变量设置）。
+> 存储相关环境变量（`DB_DRIVER` / `DB_FORMAT` / `DB_CIPHER` 与各驱动连接配置）
+> 的完整说明与平台可用性矩阵见：
+> [存储后端配置指南（环境变量全集）](./docs/storage-config.md)
 
-### 核心变量
+部署完成后请设置如下变量：
 
 | 变量 | 默认值 | 说明 |
 | :--- | :--- | :--- |
-| `DB_DRIVER` | `auto` | 数据存到哪种后端。默认自动探测；也可手动指定——Cloudflare 用 `d1`，EdgeOne 用 `blob`，或接自己的数据库：`postgres` / `mysql` / `turso` |
-| `DB_FORMAT` | `map` | 数据怎么组织：`map` 整体存成一个 JSON（默认，兼容性最好）、`key` 按条拆开存、`sql` 存成关系表（与 Go 版 OpenList 完全一致，推荐配合 `d1` / `postgres` / `turso` 使用） |
-| `DB_CIPHER` | `none` | 网盘 Cookie、密码等敏感字段落盘时的加密算法，如 `aes-256-gcm`；默认不加密 |
-| `JWT_SECRET` | 自动生成 | 登录令牌签名密钥。多实例部署建议手动设置（≥16 字符，可用 `openssl rand -hex 32` 生成） |
+| `JWT_SECRET` | (无) | JWT 令牌签名密钥（≥16 字符） |
+| `DB_FORMAT` | `map` | `map`（Json）/ `key`（分 key）/ `sql`（关系表） |
+| `DB_DRIVER` | `auto` | 可选 `auto` / `blob` / `cfkv` / `kv` / `d1` / `do` / `mysql` / `postgres` / `turso` |
+| `DB_CIPHER` | `none` | 敏感字段落盘算法，如 `aes-256-gcm` |
 
-### 接自己的数据库时的连接变量
+各驱动的环境变量与配置条件、平台可用性矩阵（Cloudflare / EdgeOne / ESA /
+自托管）见：[存储后端配置指南（环境变量全集）](./docs/storage-config.md)。
 
-| 驱动 | 需要配置的变量 |
-| :--- | :--- |
-| `turso` | `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN`（HTTP 接入，Workers / EdgeOne 等边缘环境可用） |
-| `postgres` | `PG_URL`，或 `PG_HOST` / `PG_PORT` / `PG_USER` / `PG_PASSWORD` / `PG_DATABASE`（+ `PG_SSL`） |
-| `mysql` | `MYSQL_URLS`，或 `MYSQL_HOST` / `MYSQL_PORT` / `MYSQL_USER` / `MYSQL_PASS` / `MYSQL_NAME` |
-| `cfkv` | `CF_ACCOUNT` + `CF_KV_UUID` + `CF_API_KEY` |
-
-每项变量的取值格式、各平台支持哪些驱动、合法的「驱动 × 格式」组合，以及
-可直接抄写的配置示例，见 [存储后端配置指南](./docs/storage-config.md)；
-官方英文文档见 [配置变量](https://doc.oplist.org/ecosystem/official_worker/guide_env)。
+完整环境变量，请参阅[配置变量](https://doc.oplist.org/ecosystem/official_worker/guide_env)
 
 
 ## 帮助支持
