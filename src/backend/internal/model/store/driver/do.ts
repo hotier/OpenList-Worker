@@ -64,6 +64,10 @@ function getStub(env?: any): any | null {
 
 export const doDriver: Driver = {
   name: "do",
+  // format/sql.ts 据此生成反引号标识符、? 占位符与 INSERT OR REPLACE
+  dialect: "sqlite",
+  // Durable Objects 的 SQLite 单语句绑定参数上限同为 100
+  maxBindParams: 100,
 
   async isAvailable(env?: any): Promise<boolean> {
     return getDoBinding(env) != null

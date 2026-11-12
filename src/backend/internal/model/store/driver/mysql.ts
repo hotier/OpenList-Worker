@@ -61,6 +61,8 @@ async function ensureSchema(pool: any, env?: any): Promise<void> {
 
 export const mysqlDriver: Driver = {
   name: "mysql",
+  // format/sql.ts 据此生成反引号标识符、? 占位符与 ON DUPLICATE KEY UPDATE
+  dialect: "mysql",
 
   async isAvailable(env?: any): Promise<boolean> {
     if (!isNode()) return false

@@ -55,6 +55,10 @@ async function ensureSchema(db: any, env?: any): Promise<void> {
 
 export const d1Driver: Driver = {
   name: "d1",
+  // format/sql.ts 据此生成反引号标识符、? 占位符与 INSERT OR REPLACE
+  dialect: "sqlite",
+  // D1 单条语句最多 100 个绑定参数（format/sql.ts 的分片按此值切）
+  maxBindParams: 100,
 
   async isAvailable(env?: any): Promise<boolean> {
     return getD1(env) != null

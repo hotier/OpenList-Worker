@@ -21,6 +21,8 @@ import { checkProxyConfig, kvDriver } from "./driver/kv"
 import { d1Driver } from "./driver/d1"
 import { doDriver } from "./driver/do"
 import { mysqlDriver } from "./driver/mysql"
+import { postgresDriver } from "./driver/postgres"
+import { tursoDriver } from "./driver/turso"
 import { memoryDriver } from "./driver/memory"
 import { mapFormat } from "./format/map"
 import { keyFormat } from "./format/key"
@@ -155,9 +157,11 @@ export function isServerlessRuntime(env?: any): boolean {
 }
 
 /**
- * 自动检测可用的驱动（优先级：mysql → d1 → kv → cfkv → blob → do）。
+ * 自动检测可用的驱动（优先级见下方 candidates 构造）。
  *
- * mysql 仅在显式配置连接信息时参与探测（详见 hasMysqlConfig）。
+ * 网络型后端（mysql / postgres / turso）仅在**显式配置了连接信息**时才参与
+ * 探测：它们需要建立 TCP 连接或外呼 HTTP，无配置时探测只会白付一次超时。
+ * 平台绑定型后端（d1 / kv / cfkv / blob / do）则是本地探测，代价极低。
  *
  * 若全部不可用：
  *  - 本地/容器环境：回退内存（便于开发调试）
@@ -165,15 +169,19 @@ export function isServerlessRuntime(env?: any): boolean {
  *    避免「操作成功但数据丢失」的假象
  */
 async function autoDetectDriver(env?: any): Promise<Driver> {
-  // 检测顺序：mysql → d1 → kv → cfkv → blob → do
+  // 检测顺序：网络型（有配置才探测）→ 平台绑定型
   //
-  // - mysql 需要网络连接，只有显式配置了连接信息才尝试，否则每次 auto 探测
-  //   都会先尝试建 TCP 连接（失败后继续），在 CF/EO 等边缘环境上纯属浪费。
-  // - kv 与 cfkv 同为 KV 语义：优先本地 binding（更直接、更快），
-  //   其次才走 Cloudflare REST API。
+  // 为什么网络型排在前面：它们由运维显式配置，意图明确，且能跨平台复用
+  // （同一个 PG 可同时服务 CF、EdgeOne、自托管多套部署）。平台绑定型虽然
+  // 更快，但只在特定平台存在。
+  //
+  // kv 与 cfkv 同为 KV 语义：优先本地 binding（更直接、更快），
+  // 其次才走 Cloudflare REST API。
   const candidates: Driver[] = []
 
   if (hasMysqlConfig(env)) candidates.push(mysqlDriver)
+  if (hasPostgresConfig(env)) candidates.push(postgresDriver)
+  if (hasTursoConfig(env)) candidates.push(tursoDriver)
   candidates.push(d1Driver, kvDriver, cfkvDriver, blobDriver, doDriver)
 
   for (const driver of candidates) {
@@ -218,6 +226,40 @@ function hasMysqlConfig(env?: any): boolean {
       p.MYSQL_URLS ||
       e.MYSQL_HOST ||
       p.MYSQL_HOST,
+  )
+}
+
+/**
+ * 是否显式配置了 PostgreSQL 连接信息。
+ *
+ * 与 mysql 同理：PG 需要 TCP 连接，无配置时不参与 auto 探测。
+ * 同时认 PG_URL 与 DATABASE_URL（后者是多数 PaaS 的通用变量名）。
+ */
+function hasPostgresConfig(env?: any): boolean {
+  const e = env || {}
+  const p = typeof process !== "undefined" ? process.env || {} : {}
+  return Boolean(
+    e.PG_URL ||
+      p.PG_URL ||
+      e.DATABASE_URL ||
+      p.DATABASE_URL ||
+      e.PG_HOST ||
+      p.PG_HOST,
+  )
+}
+
+/**
+ * 是否显式配置了 Turso 连接信息。
+ *
+ * Turso 走 HTTP API，边缘环境也能用，但同样需要运维显式配置
+ * URL 与 token（两者缺一不可）。
+ */
+function hasTursoConfig(env?: any): boolean {
+  const e = env || {}
+  const p = typeof process !== "undefined" ? process.env || {} : {}
+  return Boolean(
+    (e.TURSO_DATABASE_URL || p.TURSO_DATABASE_URL) &&
+      (e.TURSO_AUTH_TOKEN || p.TURSO_AUTH_TOKEN),
   )
 }
 
@@ -291,7 +333,7 @@ export const NO_STORAGE_MESSAGE =
   "DB_DRIVER=kv (DB_FORMAT=map or key) and JWT_SECRET\n" +
   "  3. Cloudflare KV / D1: bind the namespace and set DB_DRIVER accordingly\n" +
   "Environment variables to set in the project settings:\n" +
-  "  DB_DRIVER=blob | kv | cfkv | d1 | do | mysql\n" +
+  "  DB_DRIVER=blob | kv | cfkv | d1 | do | mysql | postgres | turso\n" +
   "  DB_FORMAT=map | key | sql"
 
 /**
@@ -318,6 +360,8 @@ const DRIVER_MAP: Record<string, Driver> = {
   d1: d1Driver,
   do: doDriver,
   mysql: mysqlDriver,
+  postgres: postgresDriver,
+  turso: tursoDriver,
 }
 
 /**
@@ -406,6 +450,16 @@ const DRIVER_UNAVAILABLE_HINTS: Record<string, string> = {
     "The \"mysql\" driver requires a Node runtime plus connection info " +
     "(MYSQL_URLS, or MYSQL_HOST/MYSQL_PORT/MYSQL_USER/MYSQL_PASS/MYSQL_NAME). " +
     "Cloudflare Workers cannot open raw TCP connections to MySQL.\n",
+  postgres:
+    "The \"postgres\" driver requires a Node runtime plus connection info " +
+    "(PG_URL / DATABASE_URL, or PG_HOST/PG_PORT/PG_USER/PG_PASSWORD/PG_DATABASE, " +
+    "with PG_SSL=true for managed providers).\n" +
+    "Cloudflare Workers cannot open raw TCP connections to PostgreSQL — on " +
+    "Workers use DB_DRIVER=d1, or DB_DRIVER=turso (HTTP API) for libSQL.\n",
+  turso:
+    "The \"turso\" driver requires TURSO_DATABASE_URL " +
+    "(https://<db>-<org>.turso.io) and TURSO_AUTH_TOKEN. " +
+    "It works on any runtime with fetch (Workers, EdgeOne, ESA, Node).\n",
   blob:
     "The \"blob\" driver requires either the EdgeOne Blob SDK (only present " +
     "inside the EdgeOne Makers runtime) or an ESA_BLOB binding on Alibaba ESA.\n",
@@ -486,6 +540,8 @@ const DRIVER_FORMAT_WHITELIST: Record<string, StorageFormat[]> = {
   d1: ["map", "key", "sql"],
   do: ["map", "key", "sql"],
   mysql: ["map", "key", "sql"],
+  turso: ["map", "key", "sql"],
+  postgres: ["map", "key", "sql"],
   memory: ["map", "key"],
 }
 
@@ -519,16 +575,16 @@ function validateDriverFormat(driver: Driver, format: FormatAdapter): void {
       `Driver "${driver.name}" supports: ${supported || "no format"}.\n` +
       (format.name === "sql"
         ? "The \"sql\" format needs a relational driver (SQL query support): " +
-          "d1 | do | mysql.\n"
+          "d1 | do | mysql | postgres | turso.\n"
         : `The "${format.name}" format needs a key-value driver ` +
-          "(get/put/delete/list): kv | cfkv | d1 | do | mysql.\n") +
+          "(get/put/delete/list): kv | cfkv | d1 | do | mysql | postgres | turso.\n") +
       `Fix DB_FORMAT or DB_DRIVER. See ${STORAGE_DOC}`,
     // 非法组合通常只差一个变量，直接给出「改成什么」。
     // 优先建议改 DB_FORMAT（保持用户已选定的驱动），因为驱动往往是被平台
     // 唯一支持的（如 ESA 上只有 blob），而格式才是用户可自由选择的维度。
     format.name === "sql"
       ? `Set DB_FORMAT=map (or key), or switch to a relational driver ` +
-        `(DB_DRIVER=d1 | do | mysql).`
+        `(DB_DRIVER=d1 | do | mysql | postgres | turso).`
       : `Set DB_FORMAT=map for DB_DRIVER="${driver.name}"` +
         (supported.includes("|") ? `, or one of: ${supported}.` : `.`),
   )

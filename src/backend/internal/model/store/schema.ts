@@ -1,5 +1,5 @@
 /**
- * 关系型后端（D1 / MySQL）的表结构定义。
+ * 关系型后端（D1 / MySQL / PostgreSQL / Turso）的表结构定义。
  *
  * 与 Go 后端（OpenList-Backends）完全一致的**列式表**结构：每个字段对应一列，
  * 而非「主键 + data JSON」的键值宽表。字段名对齐 Go 的 `json` tag（snake_case），
@@ -13,8 +13,9 @@
  *   - date   → TEXT（ISO 8601 时间字符串）
  *
  * 注意：`key` / `order` / `group` / `index` / `write` 等在 SQL 方言中可能是保留字，
- * 所有列名统一用反引号包裹（SQLite 与 MySQL 均支持）。
+ * 所有列名统一按方言加引号（SQLite/MySQL 用反引号，PostgreSQL 用双引号）。
  */
+import type { SqlDialect } from "./types"
 
 /**
  * 参与数据往返（load/save）的表。
@@ -294,8 +295,16 @@ export function tableSqlName(table: DdlTableName, env?: any): string {
 
 /**
  * 对象字段值 → SQL 列值。
+ *
+ * @param dialect 目标方言。bool 列在 PostgreSQL 里是原生 BOOLEAN，写入 0/1
+ *   虽然能靠 PG 的输入函数隐式接受，但 pg 驱动会把 JS number 当文本发送，
+ *   遇到严格模式或未来 PG 版本收紧时会失败；这里直接给 true/false 最稳。
  */
-export function serializeColumn(col: ColumnDef, value: any): any {
+export function serializeColumn(
+  col: ColumnDef,
+  value: any,
+  dialect: SqlDialect = "sqlite",
+): any {
   if (value === undefined || value === null) {
     // 主键不能为 null，直接返回 null 让调用方处理
     if (col.pk) return null
@@ -305,7 +314,7 @@ export function serializeColumn(col: ColumnDef, value: any): any {
     switch (col.type) {
       case "string": return ""
       case "number": return 0
-      case "bool":   return 0
+      case "bool":   return dialect === "postgres" ? false : 0
       case "json":   return "null"
       case "date":   return ""
       default:       return ""
@@ -317,7 +326,7 @@ export function serializeColumn(col: ColumnDef, value: any): any {
     case "number":
       return typeof value === "number" ? value : Number(value)
     case "bool":
-      return value ? 1 : 0
+      return dialect === "postgres" ? Boolean(value) : value ? 1 : 0
     case "json":
       return typeof value === "string" ? value : JSON.stringify(value)
     case "date": {
@@ -332,6 +341,9 @@ export function serializeColumn(col: ColumnDef, value: any): any {
 
 /**
  * SQL 列值 → 对象字段值。
+ *
+ * bool 反序列化必须同时接受布尔与 0/1：SQLite/MySQL 存整数，PostgreSQL 存
+ * 原生 boolean，pg 驱动会直接返回 JS boolean。
  */
 export function deserializeColumn(col: ColumnDef, value: any): any {
   if (value === undefined || value === null) {
@@ -357,6 +369,9 @@ export function deserializeColumn(col: ColumnDef, value: any): any {
       }
     }
     case "date":
+      // PostgreSQL 的 TEXT 列返回字符串；若将来把 date 改成 TIMESTAMPTZ，
+      // pg 会返回 Date 对象，统一转成 ISO 字符串以保持与其它方言一致。
+      if (value instanceof Date) return value.toISOString()
       return value
     default:
       return value
@@ -385,8 +400,14 @@ export function rowToEntity(table: DdlTableName, row: any): any {
 
 /**
  * 将对象转换为 INSERT 的列与参数。
+ *
+ * @param dialect 决定 bool 列的编码形态（见 serializeColumn）。
  */
-export function entityToRow(table: DdlTableName, entity: any): {
+export function entityToRow(
+  table: DdlTableName,
+  entity: any,
+  dialect: SqlDialect = "sqlite",
+): {
   columns: string[]
   values: any[]
 } {
@@ -396,18 +417,25 @@ export function entityToRow(table: DdlTableName, entity: any): {
   for (const col of def.columns) {
     const key = col.key ?? col.name
     columns.push(col.name)
-    values.push(serializeColumn(col, entity?.[key]))
+    values.push(serializeColumn(col, entity?.[key], dialect))
   }
   return { columns, values }
 }
 
 /** SQL 列类型 → 方言类型。 */
-function sqlType(col: ColumnDef, dialect: "sqlite" | "mysql"): string {
+function sqlType(col: ColumnDef, dialect: SqlDialect): string {
   switch (col.type) {
     case "number":
-      return dialect === "mysql" ? "BIGINT" : "INTEGER"
+      // Postgres 的 INTEGER 是 32 位；id 与 role 等用 BIGINT 更安全，
+      // 与 MySQL 分支保持一致（避免大 id 溢出后静默截断）。
+      return dialect === "sqlite" ? "INTEGER" : "BIGINT"
     case "bool":
-      return dialect === "mysql" ? "TINYINT(1)" : "INTEGER"
+      // Postgres 有原生 BOOLEAN；SQLite/MySQL 用整数 0/1。
+      return dialect === "postgres"
+        ? "BOOLEAN"
+        : dialect === "mysql"
+          ? "TINYINT(1)"
+          : "INTEGER"
     case "string":
     case "json":
     case "date":
@@ -417,8 +445,14 @@ function sqlType(col: ColumnDef, dialect: "sqlite" | "mysql"): string {
   }
 }
 
-/** 列标识符统一加反引号（SQLite 与 MySQL 均支持）。 */
-function quote(name: string): string {
+/**
+ * 标识符引用。
+ *
+ * - SQLite / MySQL：反引号（SQLite 同时接受反引号与双引号，MySQL 只接受反引号）
+ * - PostgreSQL：双引号（反引号在 PG 里是语法错误）
+ */
+function quote(name: string, dialect: SqlDialect = "sqlite"): string {
+  if (dialect === "postgres") return '"' + name + '"'
   return "`" + name + "`"
 }
 
@@ -427,12 +461,12 @@ function quote(name: string): string {
  */
 function buildTableDdl(
   def: TableDef,
-  dialect: "sqlite" | "mysql",
+  dialect: SqlDialect,
   tableName: string,
 ): string {
   const parts: string[] = []
   for (const col of def.columns) {
-    let line = `${quote(col.name)} ${sqlType(col, dialect)}`
+    let line = `${quote(col.name, dialect)} ${sqlType(col, dialect)}`
     if (col.pk) {
       line += " PRIMARY KEY"
     } else if (!col.nullable) {
@@ -443,23 +477,24 @@ function buildTableDdl(
     }
     parts.push(line)
   }
-  return `CREATE TABLE IF NOT EXISTS ${quote(tableName)} (${parts.join(", ")})`
+  return `CREATE TABLE IF NOT EXISTS ${quote(tableName, dialect)} (${parts.join(", ")})`
 }
 
 /**
  * 生成 schema_info 表（标记 SQL 格式是否已初始化）。
  */
-function buildSchemaInfoDdl(dialect: "sqlite" | "mysql"): string {
+function buildSchemaInfoDdl(dialect: SqlDialect): string {
+  // 主键列类型：MySQL 需要长度上限的 VARCHAR，SQLite/PG 用 TEXT 即可。
   const k = dialect === "mysql" ? "VARCHAR(255)" : "TEXT"
   const v = "TEXT"
-  return `CREATE TABLE IF NOT EXISTS ${quote("schema_info")} (${quote("k")} ${k} PRIMARY KEY, ${quote("v")} ${v})`
+  return `CREATE TABLE IF NOT EXISTS ${quote("schema_info", dialect)} (${quote("k", dialect)} ${k} PRIMARY KEY, ${quote("v", dialect)} ${v})`
 }
 
 /**
  * 生成完整的建表语句数组（幂等）。表名固定为 "x_" 前缀（对齐 Go），
  * 复数表名对齐 Go 的 GORM 命名策略。
  */
-export function buildDdl(dialect: "sqlite" | "mysql", env?: any): string[] {
+export function buildDdl(dialect: SqlDialect, env?: any): string[] {
   const out: string[] = [buildSchemaInfoDdl(dialect)]
   // 建表覆盖全部 DDL 表（含不参与往返的 sshkeys），保证与 Go 共享库时结构一致
   for (const name of DDL_TABLE_NAMES) {
@@ -474,6 +509,9 @@ export const D1_SCHEMA: string[] = buildDdl("sqlite")
 /** 兼容旧导出：MySQL 方言建表语句。 */
 export const MYSQL_SCHEMA: string[] = buildDdl("mysql")
 
+/** PostgreSQL 方言建表语句。 */
+export const POSTGRES_SCHEMA: string[] = buildDdl("postgres")
+
 /**
  * KV 表（供 map/key 格式做键值存储）的建表语句。
  *
@@ -486,4 +524,14 @@ export const KV_SCHEMA_SQLITE: string[] = [
 
 export const KV_SCHEMA_MYSQL: string[] = [
   "CREATE TABLE IF NOT EXISTS `kv` (`key` VARCHAR(512) PRIMARY KEY, `value` LONGTEXT NOT NULL)",
+]
+
+/**
+ * PostgreSQL 的 KV 表。
+ *
+ * 注意：`key` 与 `value` 都是 PG 的非保留关键字（可作为列名），但仍统一加
+ * 双引号以与其余表保持一致，并避免用户设置了 search_path/大小写折叠时踩坑。
+ */
+export const KV_SCHEMA_POSTGRES: string[] = [
+  `CREATE TABLE IF NOT EXISTS "kv" ("key" TEXT PRIMARY KEY, "value" TEXT NOT NULL)`,
 ]

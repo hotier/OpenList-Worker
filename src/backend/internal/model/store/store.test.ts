@@ -65,20 +65,22 @@ function createMockSqlDriver(name = "mock-sql"): Driver {
     delete: async () => {},
     list: async () => [],
     async query(sql: string, params: any[]): Promise<any[]> {
-      const trimmed = sql.trim()
+      // 剥离方言引号后再匹配：schema.ts / format/sql.ts 现在按方言包裹标识符
+      // （SQLite/MySQL 反引号、PostgreSQL 双引号），mock 只关心结构。
+      const trimmed = sql.trim().replace(/[`"]/g, "")
       // SELECT v FROM schema_info WHERE k = ?
-      if (/^SELECT v FROM schema_info WHERE k = \?/i.test(trimmed)) {
+      if (/^SELECT v FROM schema_info WHERE k = \?$/i.test(trimmed)) {
         const k = String(params[0])
         return schemaInfo.has(k) ? [{ v: schemaInfo.get(k) }] : []
       }
-      // SELECT `key` AS k FROM `table`（差集删除时读取现有主键）
-      const keySel = trimmed.match(/^SELECT `?(\w+)`? AS k FROM `?(\w+)`?/i)
+      // SELECT key AS k FROM table（差集删除时读取现有主键）
+      const keySel = trimmed.match(/^SELECT (\w+) AS k FROM (\w+)$/i)
       if (keySel) {
         const [, col, table] = keySel
         return ensureTable(table).map((r: any) => ({ k: r[col] }))
       }
-      // SELECT * FROM `table`
-      const m = trimmed.match(/^SELECT \* FROM `?(\w+)`?/i)
+      // SELECT * FROM table
+      const m = trimmed.match(/^SELECT \* FROM (\w+)$/i)
       if (m) return ensureTable(m[1]).map((r) => ({ ...r }))
       throw new Error(`mock-sql unsupported query: ${sql}`)
     },
@@ -89,7 +91,7 @@ function createMockSqlDriver(name = "mock-sql"): Driver {
       statements: Array<{ sql: string; params: any[] }>,
     ): Promise<void> {
       for (const { sql, params } of statements) {
-        const trimmed = sql.trim()
+        const trimmed = sql.trim().replace(/[`"]/g, "")
         // 模拟 D1 的单条语句绑定参数上限（limits: 100 per query）。
         // 越过它 D1 只会报 "too many SQL variables at offset N"，
         // 这里直接让测试失败，防止再生成超限语句（issue #180）。
@@ -98,15 +100,15 @@ function createMockSqlDriver(name = "mock-sql"): Driver {
             `mock-sql: too many SQL variables (${params.length} > 100): ${trimmed.slice(0, 120)}`,
           )
         }
-        // DELETE FROM `table`（整表清空）
-        const delAll = trimmed.match(/^DELETE FROM `?(\w+)`?$/i)
+        // DELETE FROM table（整表清空）
+        const delAll = trimmed.match(/^DELETE FROM (\w+)$/i)
         if (delAll) {
           tables.set(delAll[1], [])
           continue
         }
-        // DELETE FROM `table` WHERE `key` NOT IN (?, ?, ...)（UPSERT 后清理已删行）
+        // DELETE FROM table WHERE key NOT IN (?, ?, ...)（UPSERT 后清理已删行）
         const delNotIn = trimmed.match(
-          /^DELETE FROM `?(\w+)`? WHERE `?(\w+)`? NOT IN \(([^)]*)\)/i,
+          /^DELETE FROM (\w+) WHERE (\w+) NOT IN \(([^)]*)\)/i,
         )
         if (delNotIn) {
           const [, table, keyCol] = delNotIn
@@ -118,10 +120,8 @@ function createMockSqlDriver(name = "mock-sql"): Driver {
           )
           continue
         }
-        // DELETE FROM `table` WHERE `key` IN (?, ?, ...)（大表差集分片删除）
-        const delIn = trimmed.match(
-          /^DELETE FROM `?(\w+)`? WHERE `?(\w+)`? IN \(([^)]*)\)/i,
-        )
+        // DELETE FROM table WHERE key IN (?, ?, ...)（大表差集分片删除）
+        const delIn = trimmed.match(/^DELETE FROM (\w+) WHERE (\w+) IN \(([^)]*)\)/i)
         if (delIn) {
           const [, table, keyCol] = delIn
           const drop = new Set(params.map((p) => String(p)))
@@ -132,31 +132,31 @@ function createMockSqlDriver(name = "mock-sql"): Driver {
           continue
         }
         // schema_info 的 UPSERT 必须先于通用 INSERT 匹配，否则会被当作数据行。
-        // SQLite 方言：INSERT OR REPLACE INTO `schema_info` (`k`, `v`) VALUES (?, ?)
-        if (/^INSERT OR REPLACE INTO `?schema_info`?/i.test(trimmed)) {
+        // SQLite 方言：INSERT OR REPLACE INTO schema_info (k, v) VALUES (?, ?)
+        if (/^INSERT OR REPLACE INTO schema_info\b/i.test(trimmed)) {
           schemaInfo.set(String(params[0]), String(params[1]))
           continue
         }
-        // MySQL 方言：INSERT INTO `schema_info` (...) VALUES (...) ON DUPLICATE KEY UPDATE ...
+        // MySQL 方言：INSERT INTO schema_info (...) VALUES (...) ON DUPLICATE KEY UPDATE ...
         if (
-          /^INSERT INTO `?schema_info`?/i.test(trimmed) &&
+          /^INSERT INTO schema_info\b/i.test(trimmed) &&
           /ON DUPLICATE KEY UPDATE/i.test(trimmed)
         ) {
           schemaInfo.set(String(params[0]), String(params[1]))
           continue
         }
-        // 数据行 UPSERT（SQLite）：INSERT OR REPLACE INTO `table` (...) VALUES (...)
+        // 数据行 UPSERT（SQLite）：INSERT OR REPLACE INTO table (...) VALUES (...)
         const upSqlite = trimmed.match(
-          /^INSERT OR REPLACE INTO `?(\w+)`? \(([^)]+)\) VALUES \(([^)]+)\)/i,
+          /^INSERT OR REPLACE INTO (\w+) \(([^)]+)\) VALUES \(([^)]+)\)/i,
         )
-        // 数据行 UPSERT（MySQL）：INSERT INTO `table` (...) VALUES (...) ON DUPLICATE KEY UPDATE ...
+        // 数据行 UPSERT（MySQL）：INSERT INTO table (...) VALUES (...) ON DUPLICATE KEY UPDATE ...
         const upMysql = trimmed.match(
-          /^INSERT INTO `?(\w+)`? \(([^)]+)\) VALUES \(([^)]+)\)/i,
+          /^INSERT INTO (\w+) \(([^)]+)\) VALUES \(([^)]+)\)/i,
         )
         const ins = upSqlite || upMysql
         if (ins) {
           const table = ins[1]
-          const cols = ins[2].split(",").map((c) => c.trim().replace(/`/g, ""))
+          const cols = ins[2].split(",").map((c) => c.trim().replace(/[`"]/g, ""))
           const row: any = {}
           cols.forEach((c, i) => {
             row[c] = params[i]

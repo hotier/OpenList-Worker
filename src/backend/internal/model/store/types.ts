@@ -13,6 +13,21 @@
 export type StorageFormat = "map" | "key" | "sql"
 
 /**
+ * SQL 方言。
+ *
+ * 关系型驱动必须声明自己使用哪种方言，`format/sql.ts` 据此生成正确的
+ * 标识符引号、占位符与 UPSERT 语法（三者在三种方言里互不兼容）：
+ *
+ *   - sqlite   ：反引号/裸标识符 + `?` + `INSERT OR REPLACE`
+ *   - mysql    ：反引号 + `?` + `ON DUPLICATE KEY UPDATE`
+ *   - postgres ：双引号 + `$n` + `ON CONFLICT (...) DO UPDATE`
+ *
+ * 不能靠驱动名硬编码判断：turso 是 SQLite 方言但驱动名与 d1/do 完全不同，
+ * 后续若接入更多 SQLite 兼容后端（如 libSQL 自建）也不该改 format 层。
+ */
+export type SqlDialect = "sqlite" | "mysql" | "postgres"
+
+/**
  * 运行环境上下文（平台注入的绑定与配置）。
  *
  * 允许任意键访问：不同平台注入的绑定名各异（KV / DB / BLOB / ESA_BLOB …），
@@ -21,17 +36,42 @@ export type StorageFormat = "map" | "key" | "sql"
 export type EnvContext = Record<string, any>
 
 /** 存储驱动类型 */
-export type StorageDriver = "auto" | "blob" | "cfkv" | "kv" | "d1" | "do" | "mysql"
+export type StorageDriver =
+  | "auto"
+  | "blob"
+  | "cfkv"
+  | "kv"
+  | "d1"
+  | "do"
+  | "mysql"
+  | "turso"
+  | "postgres"
 
 /**
  * 驱动接口（底层 I/O）
- * 
- * 驱动负责与具体存储系统交互（KV、Blob、D1、MySQL 等），
+ *
+ * 驱动负责与具体存储系统交互（KV、Blob、D1、MySQL、Turso、PostgreSQL 等），
  * 提供统一的键值读写接口和可选的 SQL 执行接口。
  */
 export interface Driver {
   /** 驱动名称 */
   name: string
+
+  /**
+   * SQL 方言（仅关系型驱动声明）。
+   *
+   * `format/sql.ts` 用它决定引号风格、占位符形态与 UPSERT 语法。
+   * KV 语义驱动（kv/cfkv/blob）不声明；未声明时 sql 格式会在组合校验阶段被拒。
+   */
+  dialect?: SqlDialect
+
+  /**
+   * 单条语句允许的最大绑定参数个数（可选，默认 100）。
+   *
+   * 各平台差异很大：D1/DO 为 100，Postgres 协议上限 65535，MySQL 也有上限。
+   * `format/sql.ts` 的「删除已移除行」分片逻辑按此值切片，避免超限。
+   */
+  maxBindParams?: number
 
   /**
    * 检查驱动是否可用（是否配置了必要的环境变量/绑定）
