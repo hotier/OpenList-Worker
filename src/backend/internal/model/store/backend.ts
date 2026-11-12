@@ -233,19 +233,20 @@ function hasMysqlConfig(env?: any): boolean {
  * 是否显式配置了 PostgreSQL 连接信息。
  *
  * 与 mysql 同理：PG 需要 TCP 连接，无配置时不参与 auto 探测。
- * 同时认 PG_URL 与 DATABASE_URL（后者是多数 PaaS 的通用变量名）。
+ *
+ * 兼容性约束（重要）：auto 探测**只认** OpenList 专属的 `PG_URL` / `PG_HOST`，
+ * **刻意不认** `DATABASE_URL` —— 后者是 Heroku/Railway/Neon 等平台给「应用自身
+ * 数据库」的通用变量名，老部署的环境里可能恰好存在一个与本应用无关的
+ * `DATABASE_URL`。若 auto 模式据此选择 postgres，会静默连上那个库并建表写数据，
+ * 直接改变既有部署的落盘位置（破坏性变更）。
+ *
+ * `DATABASE_URL` 仍然可用，但仅在 **显式** `DB_DRIVER=postgres` 时生效
+ * （见 driver/postgres.ts 的 getPgConfig）。
  */
 function hasPostgresConfig(env?: any): boolean {
   const e = env || {}
   const p = typeof process !== "undefined" ? process.env || {} : {}
-  return Boolean(
-    e.PG_URL ||
-      p.PG_URL ||
-      e.DATABASE_URL ||
-      p.DATABASE_URL ||
-      e.PG_HOST ||
-      p.PG_HOST,
-  )
+  return Boolean(e.PG_URL || p.PG_URL || e.PG_HOST || p.PG_HOST)
 }
 
 /**

@@ -19,7 +19,7 @@ debugRouter.get("/info", async (c) => {
     responseData.db_state = {
       storages_count: db.storages?.length || 0,
       users_count: db.users?.length || 0,
-      cache_count: db.metas?.length || 0,
+      metas_count: db.metas?.length || 0,
       settings_count: db.settings?.length || 0,
     }
   }

@@ -92,6 +92,8 @@ TURSO_AUTH_TOKEN=
 # 仅 Node 运行时（`npm start` / Docker）；Cloudflare Workers 无法直连 PG 的
 # TCP 端口，wrangler dev 下同样不可用 —— Workers 请用 d1 或 turso。
 # 完整说明见 docs/storage-config.md。
+# 注意：auto 探测只认 PG_URL / PG_HOST；DATABASE_URL 仅在显式
+# DB_DRIVER=postgres 时生效（避免误连 PaaS 注入的无关数据库）。
 PG_URL=
 # DATABASE_URL=
 # PG_HOST=

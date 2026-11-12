@@ -113,8 +113,8 @@ DB_CIPHER   →  敏感字段如何落盘（加密层，与上面两维正交）
 
 | 变量 | 必填条件 | 说明 |
 |---|---|---|
-| `PG_URL` | 与 `DATABASE_URL` 二选一必填 | 连接串：`postgresql://user:pass@host:5432/dbname?sslmode=require`；**优先级最高**（托管库的 sslmode 等参数分项表达不了） |
-| `DATABASE_URL` | 与 `PG_URL` 二选一 | Neon / Supabase / Railway / Heroku 等平台的通用变量名，同样认 |
+| `PG_URL` | 与 `PG_HOST` 二选一必填 | 连接串：`postgresql://user:pass@host:5432/dbname?sslmode=require`；**优先级最高**（托管库的 sslmode 等参数分项表达不了） |
+| `DATABASE_URL` | 仅**显式** `DB_DRIVER=postgres` 时生效 | Neon / Supabase / Railway / Heroku 等平台的通用变量名。⚠️ **auto 探测刻意不认它**——老部署的环境里可能恰好存在一个与本应用无关的 `DATABASE_URL`，若 auto 据此切换落盘位置属于破坏性变更。显式指定时才会被读取 |
 | `PG_HOST` + `PG_PORT` + `PG_USER` + `PG_PASSWORD` + `PG_DATABASE` | 连接串未设置时必填 | 分项配置（`PG_PORT` 默认 5432） |
 | `PG_SSL` | 分项模式 + 托管库时建议 `true` | 以 `rejectUnauthorized:false` 连接（等同 `sslmode=require`：加密但不校验证书链，兼容自签/中间证书）。默认关闭——本地/内网 PG 通常无证书，强制 TLS 会连不上 |
 
@@ -153,7 +153,8 @@ DB_CIPHER   →  敏感字段如何落盘（加密层，与上面两维正交）
 
 ```
 1. mysql    （需 MYSQL_URLS 或 MYSQL_HOST）
-2. postgres （需 PG_URL / DATABASE_URL / PG_HOST）
+2. postgres （需 PG_URL 或 PG_HOST —— 注意：DATABASE_URL 不参与 auto 探测，
+              仅显式 DB_DRIVER=postgres 时生效，避免误连 PaaS 的无关数据库）
 3. turso    （需 TURSO_DATABASE_URL + TURSO_AUTH_TOKEN）
 4. d1       （本地绑定探测，代价极低）
 5. kv       （本地绑定探测）
@@ -318,8 +319,35 @@ PG_SSL=true
 
 ---
 
-## 十、变更记录
+## 十、网络出网行为说明（夸克等国内网盘驱动）
+
+EdgeOne Makers 免费套餐的 Node 云函数固定部署在海外（ap-singapore），且
+**不支持修改函数地域**。Node 20 默认开启 Happy Eyeballs（`autoSelectFamily`）：
+对双栈域名先连 IPv4，250ms 内没连上就并发试 IPv6。而该出口**没有 IPv6 路由**
+（实测 ENETUNREACH），一旦触发并发尝试，整条连接会在 ~257ms 被掐断——
+即便 IPv4 本身 400~2300ms 内能握手成功。表现为夸克驱动的
+`fetch failed（ETIMEDOUT）`。
+
+驱动层（`src/backend/drivers/quark/util.ts`）的处置：
+
+- **仅 EdgeOne Node 云函数运行时**自动关闭 Happy Eyeballs（`net.setDefaultAutoSelectFamily(false)`）
+  并将 DNS 解析顺序设为 `ipv4first`。该出口 IPv6 本就不可路由，双栈回退
+  在此零价值，关闭是纯收益、零回归。
+- **其它平台（Cloudflare / ESA / 自托管）保持 Node 默认网络行为不变**——
+  这是兼容性硬约束：自托管场景若失去「IPv4 坏时回退 IPv6」的能力，
+  会把原本可用的 IPv6-only / IPv6-优先目标变成不可用。
+- 自托管用户若遇到同样的跨境问题（症状同为 250ms 量级的 ETIMEDOUT），
+  可显式设置 `OPENLIST_FORCE_IPV4_EGRESS=1` 选择加入；不设置则行为与
+  原仓库完全一致。
+- 配合驱动内 5 次指数退避重试（仅对「未收到 HTTP 响应」的连接层错误，
+  不重试任何已到达的 HTTP 状态），实测夸克目录列表 12/12 成功。
+
+---
+
+## 十一、变更记录
 
 | 版本 | 变更 |
 |---|---|
+| `abd8881` | 新增本文档；README 驱动列表同步 |
 | `37a38ef` | 新增 `turso`（libSQL HTTP API，零依赖全平台）与 `postgres`（pg，Node）驱动；`Driver` 接口增加 `dialect` / `maxBindParams`；`format/sql.ts` 支持三方言（引号/占位符/UPSERT）；PG bool 列用原生 BOOLEAN；驱动 × 格式白名单与诊断文案同步更新 |
+| `a9237cb`→`593bd05` | 修复夸克驱动的 EdgeOne 跨端连接问题：关闭 Happy Eyeballs（仅 EdgeOne 运行时生效）+ 连接层重试；自托管/其它平台行为不变，可用 `OPENLIST_FORCE_IPV4_EGRESS=1` 选择加入 |

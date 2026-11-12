@@ -14,7 +14,7 @@ import {
 } from "./types"
 
 /**
- * 一次性网络栈初始化（懒执行）：关闭 Happy Eyeballs，走纯 IPv4。
+ * 一次性网络栈初始化（懒执行，且**仅在 EdgeOne Node 云函数运行时生效**）。
  *
  * ## 为什么不用顶层 await
  * EdgeOne Makers 的云函数构建会用目标 `node14` 的 esbuild 再打包一次产物，
@@ -28,7 +28,7 @@ import {
  *
  *   defaultResultOrder : "verbatim"
  *   lookup             : 203.119.146.33 (IPv4) → 2408:4001:f00::2b4 (IPv6)
- *   TCP connect IPv4   : ok，但耗时 2300ms（跨境链路慢）
+ *   TCP connect IPv4   : ok，但耗时 424~2300ms（跨境链路慢）
  *   TCP connect IPv6   : ENETUNREACH（该出口无 IPv6 路由）
  *   fetch              : 257ms 即失败，cause.code = ETIMEDOUT
  *
@@ -36,17 +36,37 @@ import {
  * `autoSelectFamilyAttemptTimeout`（250ms）。Node 20 默认开启 Happy Eyeballs：
  * 先连 IPv4，250ms 内没连上就并发去试 IPv6；而 IPv6 在此出口是
  * ENETUNREACH，该错误被判定为致命，整条连接在 257ms 就被掐断 —— 根本没给
- * IPv4 那 2300ms 的握手时间。
+ * IPv4 的握手时间。
  *
- * 因此「DNS 改成 ipv4first」是无效的（lookup 本来就先返回 IPv4），必须
- * **关掉 autoSelectFamily**，让 net.connect 只按解析顺序用 IPv4 单栈连接。
+ * ## 兼容性边界（只做兼容更新，绝不改变其它平台的既有行为）
  *
- * ## 影响面
- * - 仅 Node 运行时生效；Cloudflare Workers / ESA 无 node:net 时静默跳过。
- * - 进程级设置，幂等。本部署内其余驱动的 API 端点均 IPv4 可达。
- * - 保留 ipv4first：即使将来某个运行时仍启用 Happy Eyeballs，也优先 IPv4。
+ * 这些都是**进程级**设置，若在所有平台无条件生效，会改变自托管 Node 的
+ * 默认网络行为（失去 IPv4 坏时回退 IPv6 的能力）。因此：
+ *
+ *   - 仅当检测到 EdgeOne Node 云函数运行时（TENCENTCLOUD_SCF_FUNCTIONNAME /
+ *     EDGEONE_BLOB）才应用 —— 该出口 IPv6 本就是 ENETUNREACH，双栈回退
+ *     在这里**没有任何价值**，关掉是纯收益、零回归；
+ *   - 其它平台（Cloudflare Workers / ESA / 自托管 Node）保持 Node 默认
+ *     网络行为，一行为不变；
+ *   - 自托管用户遇到同样的跨境问题，可显式设置
+ *     `OPENLIST_FORCE_IPV4_EGRESS=1` 选择加入（不影响其它用户）。
+ *
+ * 保留 ipv4first：即便未来某运行时仍启用 Happy Eyeballs，也优先 IPv4。
  */
 let netStackReady: Promise<void> | null = null
+
+/** 是否运行在 EdgeOne Node 云函数（判定依据与 backend.ts 的 isServerlessRuntime 一致） */
+function isEdgeOneNodeRuntime(): boolean {
+  if (typeof process === "undefined") return false
+  const e = process.env || {}
+  const g = globalThis as any
+  return Boolean(
+    e.TENCENTCLOUD_SCF_FUNCTIONNAME ||
+      e.EDGEONE_BLOB ||
+      g?.EDGEONE_BLOB ||
+      typeof g?.EdgeOne !== "undefined",
+  )
+}
 
 function ensureIpv4Egress(): Promise<void> {
   if (netStackReady) return netStackReady
@@ -54,20 +74,29 @@ function ensureIpv4Egress(): Promise<void> {
     if (typeof process === "undefined" || !(process as any)?.versions?.node) {
       return
     }
-    // 1) DNS 解析优先 IPv4（保证 net.connect 拿到的首个地址是 IPv4）
-    try {
-      const dns: any = await import("node:dns")
-      if (typeof dns?.setDefaultResultOrder === "function") {
-        dns.setDefaultResultOrder("ipv4first")
-      }
-    } catch {
-      // 非 Node 运行时或 polyfill 不支持时忽略
+    // 兼容性闸门：只在 EdgeOne Node 运行时改全局网络栈；其余平台保持
+    // Node 默认行为（Happy Eyeballs 双栈回退是 Node 的既有语义，不能动）。
+    // 自托管用户可通过 OPENLIST_FORCE_IPV4_EGRESS=1 显式选择加入。
+    const e = process.env || {}
+    const force = String(e.OPENLIST_FORCE_IPV4_EGRESS || "").trim().toLowerCase()
+    const optedIn = force === "1" || force === "true"
+    if (!isEdgeOneNodeRuntime() && !optedIn) {
+      return
     }
-    // 2) 关闭 Happy Eyeballs —— 这是本次故障的直接原因
+    // 1) 关闭 Happy Eyeballs —— 本次故障的直接原因（实测验证：关闭后 5/5 成功）
     try {
       const net: any = await import("node:net")
       if (typeof net?.setDefaultAutoSelectFamily === "function") {
         net.setDefaultAutoSelectFamily(false)
+      }
+    } catch {
+      // 非 Node 运行时或 polyfill 不支持时忽略
+    }
+    // 2) DNS 解析优先 IPv4（保证 net.connect 拿到的首个地址是 IPv4）
+    try {
+      const dns: any = await import("node:dns")
+      if (typeof dns?.setDefaultResultOrder === "function") {
+        dns.setDefaultResultOrder("ipv4first")
       }
     } catch {
       // 同上
