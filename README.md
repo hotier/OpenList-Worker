@@ -150,10 +150,11 @@ pnpm run deploy:worker
 | :--- | :--- | :--- |
 | `JWT_SECRET` | (无) | JWT 令牌签名密钥（≥16 字符） |
 | `DB_FORMAT` | `map` | `map`（Json）/ `key`（分 key）/ `sql`（关系表） |
-| `DB_DRIVER` | `auto` | 可选 `auto` / `blob` / `cfkv` / `kv` / `d1` / `do` / `mysql` |
+| `DB_DRIVER` | `auto` | 可选 `auto` / `blob` / `cfkv` / `kv` / `d1` / `do` / `mysql` / `postgres` / `turso` |
 | `DB_CIPHER` | `none` | 敏感字段落盘算法，如 `aes-256-gcm` |
 
-
+各驱动的环境变量与配置条件、平台可用性矩阵（Cloudflare / EdgeOne / ESA /
+自托管）见 [docs/storage-config.md](docs/storage-config.md)。
 
 完整环境变量，请参阅[配置变量](https://doc.oplist.org/ecosystem/official_worker/guide_env)
 

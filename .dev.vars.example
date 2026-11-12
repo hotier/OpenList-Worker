@@ -82,6 +82,25 @@ ASSET_URLS=
 # 也可改用 wrangler.jsonc 中注释的 MYSQL_HOST / MYSQL_PORT / MYSQL_USER / MYSQL_PASS / MYSQL_NAME 分项。
 MYSQL_URLS=
 
+# ── Turso（libSQL，DB_DRIVER=turso）────────────────────────────────────────
+# 走 HTTP Pipeline API（纯 fetch），Cloudflare Workers 本地/线上都可用。
+# 两项均必填；完整说明见 docs/storage-config.md。
+TURSO_DATABASE_URL=
+TURSO_AUTH_TOKEN=
+
+# ── PostgreSQL（DB_DRIVER=postgres）─────────────────────────────────────────
+# 仅 Node 运行时（`npm start` / Docker）；Cloudflare Workers 无法直连 PG 的
+# TCP 端口，wrangler dev 下同样不可用 —— Workers 请用 d1 或 turso。
+# 完整说明见 docs/storage-config.md。
+PG_URL=
+# DATABASE_URL=
+# PG_HOST=
+# PG_PORT=5432
+# PG_USER=
+# PG_PASSWORD=
+# PG_DATABASE=
+# PG_SSL=true
+
 # EdgeOne Node 云函数专用：KV 代理地址（DB_DRIVER=kv 且运行在 EdgeOne Node 云函数时必填）。
 # EdgeOne 的 KV 绑定不会注入 Node 云函数，必须经同部署的 Edge Functions 代理访问，
 # 此处填写部署的 origin，如 https://your-project.edgeone.app
