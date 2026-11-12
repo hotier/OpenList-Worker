@@ -47,23 +47,21 @@
   },
 
   // ===========================================================================
-  // 普通环境变量（vars）：明文、非敏感，在此固化以保证每次部署结果稳定。
+  // 普通环境变量（vars）
   //
-  // ⚠️ 只放**非密文**（驱动名、格式这类确定值）。敏感项一律走
-  //    `wrangler secret put` / 面板 Secret，不放这里：
-  //      JWT_SECRET / TURSO_AUTH_TOKEN / TURSO_DATABASE_URL（含 token 语义）
+  // ⚠️ 这里**刻意不放任何存储/业务变量**（DB_DRIVER / DB_FORMAT / DB_CIPHER …）。
+  //    原因：本文件 vars 中**声明过的名字**，每次部署都会被文件值覆盖，面板上
+  //    改了也无效；只有**未声明**的变量才由 keep_vars 保护。
   //
-  // ⚠️ 注意 keep_vars 的边界：本文件 vars 中**声明过的名字**，部署时一定被
-  //    文件值覆盖；只有**未声明**的变量才由 keep_vars 保护。
-  //    因此这里只固化确定值，其余变量留给面板/secret 管理。
+  //    把存储变量交给 **面板**（Workers → Settings → Variables & Secrets）管理，
+  //    即可随时在面板上切换驱动 / 格式，而无需改代码重新部署——切换值后
+  //    在面板点一次 "Deploy" 即生效。
+  //
+  //    敏感项（JWT_SECRET / TURSO_AUTH_TOKEN / TURSO_DATABASE_URL）同理在
+  //    面板 / `wrangler secret put` 管理，wrangler deploy 不会覆盖它们。
   // ===========================================================================
   "vars": {
-    "ENVIRONMENT": "production",
-    // 存储：Turso（libSQL HTTP API）+ 列式表（与 Go 后端表结构一致）。
-    // 连接串与令牌见 secret：TURSO_DATABASE_URL / TURSO_AUTH_TOKEN。
-    "DB_DRIVER": "turso",
-    "DB_FORMAT": "sql",
-    "DB_CIPHER": "none"
+    "ENVIRONMENT": "production"
   }
 
   // ===========================================================================
