@@ -14,30 +14,40 @@ import {
 } from "./types"
 
 /**
- * IPv4 优先解析（仅 Node 运行时，幂等全局设置）。
+ * 一次性 IPv4 优先初始化（懒执行）。
  *
- * 线上证据（EdgeOne Makers ap-singapore，免费套餐地域锁定）：
- * 访问 drive-m.quark.cn（阿里国内 CDN，dualstack：A 203.119.169.64 /
- * AAAA 2408:4001:f00::27e）时连接层间歇性 ETIMEDOUT，失败呈突发分布
- * （实测连续 5+ 次超时后恢复；IPv4 直连该域名 10/10 正常、延迟 0.2s）。
- * 高概率为海外节点 IPv6 出网到国内 IPv6 侧被黑洞/丢包；把 DNS 解析
- * 顺序设为 IPv4 优先后，即使运行时未启用 Happy Eyeballs 回退，也会
- * 先走 IPv4 直连，消除该失败模式。
+ * 为什么不用顶层 await：EdgeOne Makers 的云函数构建流程会用目标 `node14`
+ * 的 esbuild 再打包一次产物，顶层 await 在该目标下是硬错误
+ * （`Top-level await is not available in the configured target environment
+ * ("node14")`），会让整个部署构建失败。因此这里改成「首次请求时懒初始化」，
+ * 动态 import 放在 async 函数内部，产物里不含顶层 await。
  *
- * 说明：
- * - setDefaultResultOrder 是进程级一次性设置，重复调用无害；
- * - 仅在 Node 运行时生效；Cloudflare Workers / ESA 边缘无 node:dns
- *   （或为 polyfill），动态导入失败时静默忽略，不影响其它平台；
- * - 影响面：本 isolate 内所有出网解析的地址族优先级，其余驱动的
- *   API 端点均为 IPv4 可达（已实测），风险极低。
+ * 背景（EdgeOne Makers 免费套餐固定 ap-singapore，无法改函数地域）：
+ * 出网访问 drive-m.quark.cn（阿里国内 CDN，dualstack：A 203.119.169.64 /
+ * AAAA 2408:4001:f00::27e）时连接层间歇性 ETIMEDOUT；而 IPv4 直连该域名
+ * 在国内线路 10/10 正常。把解析顺序设为 IPv4 优先后可绕开海外到国内
+ * IPv6 侧的丢包路径。
+ *
+ * 仅在 Node 运行时生效；Cloudflare Workers / ESA 无 node:dns 时静默跳过。
  */
-if (typeof process !== "undefined" && (process as any)?.versions?.node) {
-  try {
-    const dns = await import("node:dns")
-    dns.setDefaultResultOrder("ipv4first")
-  } catch {
-    // 非 Node 运行时或 polyfill 不支持时忽略
-  }
+let ipv4FirstReady: Promise<void> | null = null
+
+function ensureIpv4First(): Promise<void> {
+  if (ipv4FirstReady) return ipv4FirstReady
+  ipv4FirstReady = (async () => {
+    if (typeof process === "undefined" || !(process as any)?.versions?.node) {
+      return
+    }
+    try {
+      const dns: any = await import("node:dns")
+      if (typeof dns?.setDefaultResultOrder === "function") {
+        dns.setDefaultResultOrder("ipv4first")
+      }
+    } catch {
+      // 非 Node 运行时或 polyfill 不支持时忽略
+    }
+  })()
+  return ipv4FirstReady
 }
 
 // ================================================================
@@ -158,6 +168,8 @@ export class QuarkClient {
     let lastErr: unknown
     for (let attempt = 0; attempt < 5; attempt++) {
       try {
+        // 首次请求时懒初始化 IPv4 优先（见 ensureIpv4First 注释：不能放顶层 await）
+        await ensureIpv4First()
         return await fetch(url, init)
       } catch (e) {
         lastErr = e
