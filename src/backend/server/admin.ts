@@ -556,6 +556,28 @@ adminRouter.get("/driver/names", (c) => {
       "ProtonDrive",
       "GitHub Releases",
       "CNB Releases",
+      // 下面这些：仓库已实现且可在 Workers/EdgeOne/ESA 运行，补入筛选列表（纯加法）
+      "123Open",
+      "189TV",
+      "BaiduPhoto",
+      "ChaoXing",
+      "Chunk",
+      "CloudreveV3",
+      "CloudreveV4",
+      "Degoo",
+      "Doubao",
+      "FebBox",
+      "GooglePhoto",
+      "HalalCloudOpen",
+      "Ipfs",
+      "Kodbox",
+      "LenovoNasShare",
+      "Mediafire",
+      "Misskey",
+      "OpenList",
+      "OpenListShare",
+      "Teambition",
+      "Teldrive",
     ],
   })
 })
@@ -4673,6 +4695,384 @@ const driverConfigs: Record<string, any> = {
       need_ms: false,
       default_root: "root",
     },
+  },
+
+  // ===========================================================================
+  // 以下驱动：仓库内**已实现**、工厂（internal/op/storage.ts）**已有分支**、
+  // 且只依赖 fetch / 纯 JS（无 node:net、node:fs、原生模块），可在 Workers /
+  // EdgeOne / ESA 运行 —— 此前只是缺少面板表单定义，故补注册（纯加法）。
+  //
+  // 明确不能在 Workers 运行的驱动**不在此列**，保持原状：
+  //   - SFTP / FTP：构建期被 emptyNodeDriverPlugin 打桩（依赖 ssh2 / node:net）
+  //   - SMB：需要 SMB/TCP 客户端
+  //   - 189PC：依赖 node:crypto 的 createCipher，且为已废弃的重复实现
+  //   - MoPan：依赖 node:crypto 的 createCipher / randomBytes
+  //   - NeteaseMusic：AES 分支以 process.release.name === "node" 判定，
+  //     CF Workers 开启 nodejs_compat 后该判定为真，会走 createCipheriv —— 而
+  //     Workers 未实现该 API，故不注册（EdgeOne 等真 Node 环境仍可通过源码使用）
+  //   - 本地盘 local：Workers 无文件系统
+  // ===========================================================================
+
+  "123Open": {
+    name: "123Open",
+    default_mount_path: "/123open",
+    common: COMMON_FIELDS,
+    additional: [
+      { name: "client_id", type: "string", default: "", required: false },
+      { name: "client_secret", type: "text", default: "", required: false },
+      { name: "access_token", type: "text", default: "", required: false },
+      { name: "refresh_token", type: "text", default: "", required: false },
+      { name: "use_online_api", type: "bool", default: "false", required: false },
+      { name: "api_url_address", type: "string", default: "", required: false },
+      { name: "root_folder_id", type: "string", default: "", required: false },
+    ],
+  },
+
+  "189TV": {
+    name: "189TV",
+    default_mount_path: "/189tv",
+    common: COMMON_FIELDS,
+    additional: [
+      {
+        name: "access_token",
+        type: "text",
+        default: "",
+        required: true,
+        help: "天翼云盘 TV 端扫码登录获得的 E189AccessToken",
+      },
+      {
+        name: "type",
+        type: "select",
+        options: "personal,family",
+        default: "personal",
+        required: true,
+        help: "personal=个人云；family=家庭云",
+      },
+      { name: "family_id", type: "string", default: "", required: false },
+      { name: "root_folder_id", type: "string", default: "", required: false },
+      { name: "order_by", type: "string", default: "filename", required: false },
+      { name: "order_direction", type: "string", default: "asc", required: false },
+    ],
+  },
+
+  BaiduPhoto: {
+    name: "BaiduPhoto",
+    default_mount_path: "/baiduphoto",
+    common: COMMON_FIELDS,
+    additional: [
+      { name: "cookie", type: "text", default: "", required: true },
+      {
+        name: "show_type",
+        type: "select",
+        options: "root,root_only_album,root_only_file",
+        default: "root",
+        required: true,
+      },
+      { name: "album_id", type: "string", default: "", required: false },
+      { name: "delete_origin", type: "bool", default: "false", required: false },
+      { name: "upload_thread", type: "string", default: "", required: false },
+    ],
+  },
+
+  ChaoXing: {
+    name: "ChaoXing",
+    default_mount_path: "/chaoxing",
+    common: COMMON_FIELDS,
+    additional: [
+      { name: "user_name", type: "string", default: "", required: true },
+      { name: "password", type: "string", default: "", required: true },
+      { name: "bbsid", type: "string", default: "", required: true },
+      { name: "root_folder_id", type: "string", default: "", required: false },
+      { name: "cookie", type: "text", default: "", required: false },
+    ],
+  },
+
+  Chunk: {
+    name: "Chunk",
+    default_mount_path: "/chunk",
+    common: COMMON_FIELDS,
+    additional: [
+      {
+        name: "remote_path",
+        type: "string",
+        default: "",
+        required: true,
+        help: "底层存储的挂载路径，如 /aliyundrive；分片文件会写到该路径下",
+      },
+      { name: "part_size", type: "number", default: "5242880", required: true },
+      { name: "chunk_large_file_only", type: "bool", default: "false", required: false },
+      { name: "chunk_prefix", type: "string", default: "", required: false },
+      { name: "custom_ext", type: "string", default: "", required: false },
+      { name: "store_hash", type: "bool", default: "false", required: false },
+      { name: "num_list_workers", type: "number", default: "1", required: false },
+      { name: "thumbnail", type: "bool", default: "false", required: false },
+      { name: "show_hidden", type: "bool", default: "false", required: false },
+    ],
+  },
+
+  CloudreveV3: {
+    name: "CloudreveV3",
+    default_mount_path: "/cloudreve",
+    common: COMMON_FIELDS,
+    additional: [
+      { name: "address", type: "string", default: "", required: true },
+      { name: "username", type: "string", default: "", required: false },
+      { name: "password", type: "string", default: "", required: false },
+      { name: "cookie", type: "text", default: "", required: false },
+      { name: "custom_ua", type: "string", default: "", required: false },
+      {
+        name: "enable_thumb_and_folder_size",
+        type: "bool",
+        default: "false",
+        required: false,
+      },
+    ],
+  },
+
+  CloudreveV4: {
+    name: "CloudreveV4",
+    default_mount_path: "/cloudreve_v4",
+    common: COMMON_FIELDS,
+    additional: [
+      {
+        name: "address",
+        type: "string",
+        default: "",
+        required: true,
+        help: "站点地址，含协议，如 https://cloud.example.com",
+      },
+      { name: "username", type: "string", default: "", required: false },
+      { name: "password", type: "string", default: "", required: false },
+      { name: "access_token", type: "text", default: "", required: false },
+      { name: "refresh_token", type: "text", default: "", required: false },
+      { name: "custom_ua", type: "string", default: "", required: false },
+      { name: "enable_thumb", type: "bool", default: "false", required: false },
+      { name: "order_by", type: "string", default: "", required: false },
+      { name: "order_direction", type: "string", default: "", required: false },
+    ],
+  },
+
+  Degoo: {
+    name: "Degoo",
+    default_mount_path: "/degoo",
+    common: COMMON_FIELDS,
+    additional: [
+      { name: "username", type: "string", default: "", required: false },
+      { name: "password", type: "string", default: "", required: false },
+      { name: "refresh_token", type: "text", default: "", required: false },
+      { name: "access_token", type: "text", default: "", required: false },
+      { name: "root_folder_id", type: "string", default: "", required: false },
+    ],
+  },
+
+  Doubao: {
+    name: "Doubao",
+    default_mount_path: "/doubao",
+    common: COMMON_FIELDS,
+    additional: [
+      { name: "cookie", type: "text", default: "", required: true },
+      {
+        name: "download_api",
+        type: "select",
+        options: "get_file_url,get_download_info",
+        default: "get_file_url",
+        required: true,
+      },
+      { name: "limit_rate", type: "number", default: "0", required: false },
+    ],
+  },
+
+  FebBox: {
+    name: "FebBox",
+    default_mount_path: "/febbox",
+    common: COMMON_FIELDS,
+    additional: [
+      { name: "client_id", type: "string", default: "", required: true },
+      { name: "client_secret", type: "text", default: "", required: true },
+      { name: "refresh_token", type: "text", default: "", required: false },
+      { name: "root_folder_id", type: "string", default: "", required: false },
+      { name: "sort_rule", type: "string", default: "", required: false },
+      { name: "page_size", type: "number", default: "0", required: false },
+      { name: "user_ip", type: "string", default: "", required: false },
+    ],
+  },
+
+  GooglePhoto: {
+    name: "GooglePhoto",
+    default_mount_path: "/googlephoto",
+    common: COMMON_FIELDS,
+    additional: [
+      { name: "client_id", type: "string", default: "", required: true },
+      { name: "client_secret", type: "text", default: "", required: true },
+      { name: "refresh_token", type: "text", default: "", required: true },
+      { name: "root_folder_id", type: "string", default: "", required: false },
+      { name: "show_archive", type: "bool", default: "false", required: false },
+    ],
+  },
+
+  HalalCloudOpen: {
+    name: "HalalCloudOpen",
+    default_mount_path: "/halalcloud",
+    common: COMMON_FIELDS,
+    additional: [
+      { name: "client_id", type: "string", default: "", required: true },
+      { name: "client_secret", type: "text", default: "", required: true },
+      { name: "refresh_token", type: "text", default: "", required: false },
+      { name: "host", type: "string", default: "", required: false },
+      { name: "root_folder_id", type: "string", default: "", required: false },
+    ],
+  },
+
+  Ipfs: {
+    name: "Ipfs",
+    default_mount_path: "/ipfs",
+    common: COMMON_FIELDS,
+    additional: [
+      {
+        name: "mode",
+        type: "select",
+        options: "ipfs,ipns,mfs",
+        default: "ipfs",
+        required: true,
+      },
+      {
+        name: "endpoint",
+        type: "string",
+        default: "",
+        required: true,
+        help: "节点 API 地址，如 http://127.0.0.1:5001",
+      },
+      {
+        name: "gateway",
+        type: "string",
+        default: "",
+        required: true,
+        help: "网关地址，如 http://127.0.0.1:8080",
+      },
+      { name: "root_path", type: "string", default: "", required: false },
+    ],
+  },
+
+  Kodbox: {
+    name: "Kodbox",
+    default_mount_path: "/kodbox",
+    common: COMMON_FIELDS,
+    additional: [
+      {
+        name: "address",
+        type: "string",
+        default: "",
+        required: true,
+        help: "站点地址，如 https://kod.example.com",
+      },
+      { name: "username", type: "string", default: "", required: false },
+      { name: "password", type: "string", default: "", required: false },
+      { name: "root_path", type: "string", default: "", required: false },
+    ],
+  },
+
+  LenovoNasShare: {
+    name: "LenovoNasShare",
+    default_mount_path: "/lenovonas",
+    common: COMMON_FIELDS,
+    additional: [
+      { name: "share_id", type: "string", default: "", required: true },
+      { name: "share_pwd", type: "string", default: "", required: true },
+      { name: "host", type: "string", default: "", required: false },
+      { name: "show_root_folder", type: "bool", default: "false", required: false },
+      { name: "root_path", type: "string", default: "", required: false },
+    ],
+  },
+
+  Mediafire: {
+    name: "Mediafire",
+    default_mount_path: "/mediafire",
+    common: COMMON_FIELDS,
+    additional: [
+      { name: "cookie", type: "text", default: "", required: true },
+      { name: "session_token", type: "text", default: "", required: false },
+      { name: "chunk_size", type: "number", default: "0", required: false },
+      { name: "order_by", type: "string", default: "", required: false },
+      { name: "order_direction", type: "string", default: "", required: false },
+    ],
+  },
+
+  Misskey: {
+    name: "Misskey",
+    default_mount_path: "/misskey",
+    common: COMMON_FIELDS,
+    additional: [
+      { name: "endpoint", type: "string", default: "", required: true },
+      { name: "access_token", type: "text", default: "", required: true },
+      { name: "root_path", type: "string", default: "", required: false },
+    ],
+  },
+
+  OpenList: {
+    name: "OpenList",
+    default_mount_path: "/openlist",
+    common: COMMON_FIELDS,
+    additional: [
+      { name: "url", type: "string", default: "", required: true },
+      { name: "username", type: "string", default: "", required: false },
+      { name: "password", type: "string", default: "", required: false },
+      { name: "token", type: "text", default: "", required: false },
+      { name: "meta_password", type: "string", default: "", required: false },
+      { name: "root_path", type: "string", default: "", required: false },
+    ],
+  },
+
+  OpenListShare: {
+    name: "OpenListShare",
+    default_mount_path: "/openlistshare",
+    common: COMMON_FIELDS,
+    additional: [
+      { name: "url", type: "string", default: "", required: true },
+      { name: "sid", type: "string", default: "", required: true },
+      { name: "pwd", type: "string", default: "", required: false },
+      {
+        name: "forward_archive_requests",
+        type: "bool",
+        default: "false",
+        required: false,
+      },
+    ],
+  },
+
+  Teambition: {
+    name: "Teambition",
+    default_mount_path: "/teambition",
+    common: COMMON_FIELDS,
+    additional: [
+      {
+        name: "region",
+        type: "select",
+        options: "china,international",
+        default: "china",
+        required: true,
+      },
+      { name: "cookie", type: "text", default: "", required: true },
+      { name: "project_id", type: "string", default: "", required: true },
+      { name: "order_by", type: "string", default: "", required: false },
+      { name: "order_direction", type: "string", default: "", required: false },
+    ],
+  },
+
+  Teldrive: {
+    name: "Teldrive",
+    default_mount_path: "/teldrive",
+    common: COMMON_FIELDS,
+    additional: [
+      {
+        name: "url",
+        type: "string",
+        default: "",
+        required: true,
+        help: "TelDrive 服务地址",
+      },
+      { name: "access_token", type: "text", default: "", required: true },
+      { name: "root_path", type: "string", default: "", required: false },
+    ],
   },
 }
 
