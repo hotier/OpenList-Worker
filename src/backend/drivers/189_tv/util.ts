@@ -159,12 +159,24 @@ export class Client189TV {
             "\n完成登录后，禁用再启用该存储即可自动获取 access_token",
         )
       }
-      const token = await this.pollQrLoginResult(this.addition.temp_uuid)
+      // 扫码/短信登录完成后，服务端可能存在少量延迟。
+      // 这里做轻量轮询，避免用户“刚启用就没拿到 token”。
+      const uuid = this.addition.temp_uuid
+      const MAX_POLL = 12
+      const INTERVAL_MS = 2000
+      let token: string | null = null
+      for (let i = 0; i < MAX_POLL; i++) {
+        token = await this.pollQrLoginResult(uuid)
+        if (token) break
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => setTimeout(r, INTERVAL_MS))
+      }
+
       if (!token) {
         throw new Error(
           "[189TV] 尚未完成登录：请用天翼云盘 App 扫码，或在浏览器打开 " +
-            this.addition.temp_uuid +
-            " 完成短信登录，然后禁用再启用该存储",
+            uuid +
+            " 完成短信登录，然后稍等片刻再禁用/启用该存储（本驱动已自动轮询）",
         )
       }
       this.addition.access_token = token
