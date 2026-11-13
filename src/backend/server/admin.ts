@@ -4753,8 +4753,8 @@ const driverConfigs: Record<string, any> = {
         name: "access_token",
         type: "text",
         default: "",
-        required: true,
-        help: "天翼云盘 TV 端扫码登录获得的 E189AccessToken",
+        required: false,
+        help: "留空即可：保存后会自动生成登录链接/二维码，用「天翼云盘」手机 App 扫码或打开链接短信登录，然后禁用再启用该存储即可自动获取；也可以直接粘贴已获取的 E189AccessToken",
       },
       {
         name: "type",

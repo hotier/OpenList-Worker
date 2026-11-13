@@ -726,24 +726,17 @@ async function createDriver(
     normDriver === "189_tv"
   ) {
     const addition = parseAddition(storageConfig)
-    driver = new Driver189TV(addition, async (accessToken: string) => {
-      try {
-        const db = await getDb()
-        const st = (db.storages || []).find(
-          (s: any) => s.id === storageConfig?.id,
-        )
-        if (!st) return
-        const stAddition =
-          typeof st.addition === "string"
-            ? JSON.parse(st.addition || "{}")
-            : st.addition || {}
-        stAddition.access_token = accessToken
-        st.addition = JSON.stringify(stAddition)
-        await saveDb(db)
-      } catch (e) {
-        console.warn("[189TV] failed to persist access_token:", e)
-      }
-    })
+    driver = new Driver189TV(
+      addition,
+      // access_token 轮换回写（loginFamilyMerge 可能下发新 token）
+      async (accessToken: string) => {
+        await persist189TVAddition(storageConfig, { access_token: accessToken })
+      },
+      // 扫码/短信登录的中间态回写（temp_uuid → access_token）
+      async (patch: Record<string, any>) => {
+        await persist189TVAddition(storageConfig, patch)
+      },
+    )
     await driver.init?.()
   } else if (
     normDriver === "189" ||
@@ -1351,6 +1344,48 @@ function isCloud189Driver(driverName: string): boolean {
     normDriver === "ctyun" ||
     normDriver === "189pan"
   )
+}
+
+/**
+ * 189TV：把登录过程中产生的 addition 字段（temp_uuid / access_token）合并回写。
+ *
+ * 必须同时同步 `storageConfig.addition`：admin 的 create/update 在 init 后会
+ * 用 `updatedStorage`（含**原始** addition）整体覆盖保存一次——若只写库不同步
+ * 该对象，扫码登录的中间态会被旧值覆盖，导致流程永远走不完（与 OneDrive
+ * refresh_token 的做法一致，见其分支注释）。
+ */
+async function persist189TVAddition(
+  storageConfig: any,
+  patch: Record<string, any>,
+): Promise<void> {
+  try {
+    const db = await getDb()
+    const st = (db.storages || []).find(
+      (s: any) => s.id === storageConfig?.id,
+    )
+    if (!st) return
+    const cur =
+      typeof st.addition === "string"
+        ? JSON.parse(st.addition || "{}")
+        : st.addition || {}
+    const next = { ...cur, ...patch }
+    st.addition = JSON.stringify(next)
+    if (storageConfig && typeof storageConfig === "object") {
+      if (typeof storageConfig.addition === "string") {
+        storageConfig.addition = JSON.stringify(next)
+      } else if (
+        storageConfig.addition &&
+        typeof storageConfig.addition === "object"
+      ) {
+        Object.assign(storageConfig.addition, patch)
+      } else {
+        storageConfig.addition = JSON.stringify(next)
+      }
+    }
+    await saveDb(db)
+  } catch (e) {
+    console.warn("[189TV] failed to persist addition:", e)
+  }
 }
 
 export async function scheduleStoragePersistence(

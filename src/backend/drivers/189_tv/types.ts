@@ -4,12 +4,30 @@
 export interface Driver189TVAddition {
   /** 通过二维码登录获得的 E189AccessToken */
   access_token?: string
+  /** 扫码/短信登录过程中暂存的二维码 uuid（服务端自动管理，勿手改） */
+  temp_uuid?: string
   root_folder_id?: string
   order_by?: string
   order_direction?: string
   /** personal | family */
   type?: string
   family_id?: string
+}
+
+/** GET /family/manage/getQrCodeUUID.action 响应 */
+export interface QrCodeUuidResp {
+  uuid?: string
+  res_code?: number
+  res_message?: string
+}
+
+/** GET /family/manage/qrcodeLoginResult.action 响应 */
+export interface E189AccessTokenResp {
+  e189AccessToken?: string
+  E189AccessToken?: string
+  accessToken?: string
+  res_code?: number
+  res_message?: string
 }
 
 export interface AppSessionResp {

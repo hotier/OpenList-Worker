@@ -11,6 +11,8 @@ import {
   BatchTaskInfo,
   CreateUploadFileResp,
   DownResp,
+  QrCodeUuidResp,
+  E189AccessTokenResp,
 } from "./types"
 import { hmacSha1Hex, md5Hex, randomUUID189 } from "../189/crypto"
 
@@ -109,13 +111,17 @@ export class Client189TV {
   private addition: Driver189TVAddition
   private tokenInfo: AppSessionResp | null = null
   private persistAccessToken?: (accessToken: string) => void | Promise<void>
+  /** 登录过程中产生的字段（temp_uuid / access_token 等）需回写存储配置 */
+  private persistAddition?: (patch: Record<string, any>) => Promise<void>
 
   constructor(
     addition: Driver189TVAddition,
     persistAccessToken?: (accessToken: string) => void | Promise<void>,
+    persistAddition?: (patch: Record<string, any>) => Promise<void>,
   ) {
     this.addition = addition
     this.persistAccessToken = persistAccessToken
+    this.persistAddition = persistAddition
   }
 
   isFamily(): boolean {
@@ -126,13 +132,87 @@ export class Client189TV {
     return this.addition.family_id || ""
   }
 
+  /**
+   * 登录授权（对齐 Go 版 login() 的二维码/短信两段式流程，**无需 TV 客户端**）：
+   *
+   * 1. access_token 缺失且无 temp_uuid → 请求 getQrCodeUUID.action 取得
+   *    登录 uuid（它本身就是登录链接），回写 addition 后抛出带指引的错误；
+   *    用户用「天翼云盘」手机 App 扫码，或在浏览器打开该链接完成短信登录。
+   * 2. 已有 temp_uuid → 轮询 qrcodeLoginResult.action 换取 e189AccessToken，
+   *    换到即回写并继续 login()；未完成则提示重试。
+   *
+   * 两步都必须把中间态持久化到存储 addition（temp_uuid / access_token），
+   * 否则 disable/enable 重建驱动实例后进度丢失。
+   */
   async init(): Promise<void> {
     if (!this.addition.access_token) {
-      throw new Error(
-        "[189TV] access_token 为空：请先在别处扫码登录获取 access_token 后填入配置",
-      )
+      if (!this.addition.temp_uuid) {
+        const uuid = await this.getQrCodeUuid()
+        this.addition.temp_uuid = uuid
+        if (this.persistAddition) {
+          await this.persistAddition({ temp_uuid: uuid })
+        }
+        throw new Error(
+          "[189TV] 需要登录授权（无需 TV 客户端）：用「天翼云盘」手机 App 扫描下面的二维码内容，" +
+            "或在浏览器打开该链接并选择短信登录：\n" +
+            uuid +
+            "\n完成登录后，禁用再启用该存储即可自动获取 access_token",
+        )
+      }
+      const token = await this.pollQrLoginResult(this.addition.temp_uuid)
+      if (!token) {
+        throw new Error(
+          "[189TV] 尚未完成登录：请用天翼云盘 App 扫码，或在浏览器打开 " +
+            this.addition.temp_uuid +
+            " 完成短信登录，然后禁用再启用该存储",
+        )
+      }
+      this.addition.access_token = token
+      this.addition.temp_uuid = ""
+      if (this.persistAddition) {
+        await this.persistAddition({ access_token: token, temp_uuid: "" })
+      }
     }
     await this.login()
+  }
+
+  /** 步骤 1：获取登录二维码 uuid（Go getQrCodeUUID.action） */
+  async getQrCodeUuid(): Promise<string> {
+    const resp = (await this.request(
+      ApiUrl + "/family/manage/getQrCodeUUID.action",
+      "GET",
+      { isAppKey: true },
+    )) as QrCodeUuidResp
+    const uuid = String(resp?.uuid || "").trim()
+    if (!uuid) {
+      throw new Error(
+        "[189TV] 未获取到登录 uuid: " + JSON.stringify(resp).slice(0, 200),
+      )
+    }
+    return uuid
+  }
+
+  /**
+   * 步骤 2：轮询扫码/短信登录结果（Go qrcodeLoginResult.action）。
+   * 未完成时服务端可能报错或返回空 token——统一按「未完成」处理返回 null。
+   */
+  async pollQrLoginResult(uuid: string): Promise<string | null> {
+    let resp: E189AccessTokenResp
+    try {
+      resp = (await this.request(
+        ApiUrl + "/family/manage/qrcodeLoginResult.action",
+        "GET",
+        { query: { uuid }, isAppKey: true },
+      )) as E189AccessTokenResp
+    } catch (e: any) {
+      const msg = String(e?.message || "")
+      if (msg.includes("API 错误") || msg.includes("非预期响应")) return null
+      throw e
+    }
+    const token = String(
+      resp?.e189AccessToken || resp?.E189AccessToken || resp?.accessToken || "",
+    ).trim()
+    return token || null
   }
 
   private signatureHeader(

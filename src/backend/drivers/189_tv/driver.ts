@@ -48,8 +48,9 @@ export class Driver189TV implements StorageDriver {
   constructor(
     addition: Driver189TVAddition,
     persistAccessToken?: (accessToken: string) => void | Promise<void>,
+    persistAddition?: (patch: Record<string, any>) => Promise<void>,
   ) {
-    this.client = new Client189TV(addition, persistAccessToken)
+    this.client = new Client189TV(addition, persistAccessToken, persistAddition)
   }
 
   async init(): Promise<void> {
