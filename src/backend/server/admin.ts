@@ -4726,6 +4726,16 @@ const driverConfigs: Record<string, any> = {
       { name: "api_url_address", type: "string", default: "", required: false },
       { name: "root_folder_id", type: "string", default: "", required: false },
     ],
+    config: {
+      name: "123Open",
+      local_sort: false,
+      only_local: false,
+      only_proxy: false,
+      no_cache: false,
+      no_upload: true,
+      need_ms: false,
+      default_root: "",
+    },
   },
 
   "189TV": {
@@ -4753,6 +4763,16 @@ const driverConfigs: Record<string, any> = {
       { name: "order_by", type: "string", default: "filename", required: false },
       { name: "order_direction", type: "string", default: "asc", required: false },
     ],
+    config: {
+      name: "189TV",
+      local_sort: false,
+      only_local: false,
+      only_proxy: false,
+      no_cache: false,
+      no_upload: false,
+      need_ms: false,
+      default_root: "",
+    },
   },
 
   BaiduPhoto: {
@@ -4772,6 +4792,16 @@ const driverConfigs: Record<string, any> = {
       { name: "delete_origin", type: "bool", default: "false", required: false },
       { name: "upload_thread", type: "string", default: "", required: false },
     ],
+    config: {
+      name: "BaiduPhoto",
+      local_sort: false,
+      only_local: false,
+      only_proxy: false,
+      no_cache: false,
+      no_upload: false,
+      need_ms: false,
+      default_root: "",
+    },
   },
 
   ChaoXing: {
@@ -4785,6 +4815,16 @@ const driverConfigs: Record<string, any> = {
       { name: "root_folder_id", type: "string", default: "", required: false },
       { name: "cookie", type: "text", default: "", required: false },
     ],
+    config: {
+      name: "ChaoXing",
+      local_sort: false,
+      only_local: false,
+      only_proxy: true,
+      no_cache: false,
+      no_upload: false,
+      need_ms: false,
+      default_root: "",
+    },
   },
 
   Chunk: {
@@ -4808,6 +4848,16 @@ const driverConfigs: Record<string, any> = {
       { name: "thumbnail", type: "bool", default: "false", required: false },
       { name: "show_hidden", type: "bool", default: "false", required: false },
     ],
+    config: {
+      name: "Chunk",
+      local_sort: false,
+      only_local: false,
+      only_proxy: true,
+      no_cache: false,
+      no_upload: false,
+      need_ms: false,
+      default_root: "",
+    },
   },
 
   CloudreveV3: {
@@ -4827,6 +4877,16 @@ const driverConfigs: Record<string, any> = {
         required: false,
       },
     ],
+    config: {
+      name: "CloudreveV3",
+      local_sort: false,
+      only_local: false,
+      only_proxy: false,
+      no_cache: false,
+      no_upload: true,
+      need_ms: false,
+      default_root: "",
+    },
   },
 
   CloudreveV4: {
@@ -4850,6 +4910,16 @@ const driverConfigs: Record<string, any> = {
       { name: "order_by", type: "string", default: "", required: false },
       { name: "order_direction", type: "string", default: "", required: false },
     ],
+    config: {
+      name: "CloudreveV4",
+      local_sort: false,
+      only_local: false,
+      only_proxy: false,
+      no_cache: false,
+      no_upload: true,
+      need_ms: false,
+      default_root: "",
+    },
   },
 
   Degoo: {
@@ -4863,6 +4933,16 @@ const driverConfigs: Record<string, any> = {
       { name: "access_token", type: "text", default: "", required: false },
       { name: "root_folder_id", type: "string", default: "", required: false },
     ],
+    config: {
+      name: "Degoo",
+      local_sort: false,
+      only_local: false,
+      only_proxy: false,
+      no_cache: false,
+      no_upload: true,
+      need_ms: false,
+      default_root: "",
+    },
   },
 
   Doubao: {
@@ -4880,6 +4960,16 @@ const driverConfigs: Record<string, any> = {
       },
       { name: "limit_rate", type: "number", default: "0", required: false },
     ],
+    config: {
+      name: "Doubao",
+      local_sort: false,
+      only_local: false,
+      only_proxy: false,
+      no_cache: false,
+      no_upload: true,
+      need_ms: false,
+      default_root: "",
+    },
   },
 
   FebBox: {
@@ -4895,6 +4985,16 @@ const driverConfigs: Record<string, any> = {
       { name: "page_size", type: "number", default: "0", required: false },
       { name: "user_ip", type: "string", default: "", required: false },
     ],
+    config: {
+      name: "FebBox",
+      local_sort: false,
+      only_local: false,
+      only_proxy: false,
+      no_cache: false,
+      no_upload: true,
+      need_ms: false,
+      default_root: "",
+    },
   },
 
   GooglePhoto: {
@@ -4908,6 +5008,16 @@ const driverConfigs: Record<string, any> = {
       { name: "root_folder_id", type: "string", default: "", required: false },
       { name: "show_archive", type: "bool", default: "false", required: false },
     ],
+    config: {
+      name: "GooglePhoto",
+      local_sort: false,
+      only_local: false,
+      only_proxy: true,
+      no_cache: false,
+      no_upload: true,
+      need_ms: false,
+      default_root: "",
+    },
   },
 
   HalalCloudOpen: {
@@ -4921,6 +5031,16 @@ const driverConfigs: Record<string, any> = {
       { name: "host", type: "string", default: "", required: false },
       { name: "root_folder_id", type: "string", default: "", required: false },
     ],
+    config: {
+      name: "HalalCloudOpen",
+      local_sort: false,
+      only_local: false,
+      only_proxy: false,
+      no_cache: false,
+      no_upload: true,
+      need_ms: false,
+      default_root: "",
+    },
   },
 
   Ipfs: {
@@ -4951,6 +5071,16 @@ const driverConfigs: Record<string, any> = {
       },
       { name: "root_path", type: "string", default: "", required: false },
     ],
+    config: {
+      name: "Ipfs",
+      local_sort: false,
+      only_local: false,
+      only_proxy: false,
+      no_cache: false,
+      no_upload: false,
+      need_ms: false,
+      default_root: "",
+    },
   },
 
   Kodbox: {
@@ -4969,6 +5099,16 @@ const driverConfigs: Record<string, any> = {
       { name: "password", type: "string", default: "", required: false },
       { name: "root_path", type: "string", default: "", required: false },
     ],
+    config: {
+      name: "Kodbox",
+      local_sort: false,
+      only_local: false,
+      only_proxy: false,
+      no_cache: false,
+      no_upload: false,
+      need_ms: false,
+      default_root: "",
+    },
   },
 
   LenovoNasShare: {
@@ -4982,6 +5122,16 @@ const driverConfigs: Record<string, any> = {
       { name: "show_root_folder", type: "bool", default: "false", required: false },
       { name: "root_path", type: "string", default: "", required: false },
     ],
+    config: {
+      name: "LenovoNasShare",
+      local_sort: false,
+      only_local: false,
+      only_proxy: false,
+      no_cache: false,
+      no_upload: true,
+      need_ms: false,
+      default_root: "",
+    },
   },
 
   Mediafire: {
@@ -4995,6 +5145,16 @@ const driverConfigs: Record<string, any> = {
       { name: "order_by", type: "string", default: "", required: false },
       { name: "order_direction", type: "string", default: "", required: false },
     ],
+    config: {
+      name: "Mediafire",
+      local_sort: false,
+      only_local: false,
+      only_proxy: false,
+      no_cache: false,
+      no_upload: true,
+      need_ms: false,
+      default_root: "",
+    },
   },
 
   Misskey: {
@@ -5006,6 +5166,16 @@ const driverConfigs: Record<string, any> = {
       { name: "access_token", type: "text", default: "", required: true },
       { name: "root_path", type: "string", default: "", required: false },
     ],
+    config: {
+      name: "Misskey",
+      local_sort: false,
+      only_local: false,
+      only_proxy: false,
+      no_cache: false,
+      no_upload: true,
+      need_ms: false,
+      default_root: "",
+    },
   },
 
   OpenList: {
@@ -5020,6 +5190,16 @@ const driverConfigs: Record<string, any> = {
       { name: "meta_password", type: "string", default: "", required: false },
       { name: "root_path", type: "string", default: "", required: false },
     ],
+    config: {
+      name: "OpenList",
+      local_sort: false,
+      only_local: false,
+      only_proxy: false,
+      no_cache: false,
+      no_upload: true,
+      need_ms: false,
+      default_root: "",
+    },
   },
 
   OpenListShare: {
@@ -5037,6 +5217,16 @@ const driverConfigs: Record<string, any> = {
         required: false,
       },
     ],
+    config: {
+      name: "OpenListShare",
+      local_sort: false,
+      only_local: false,
+      only_proxy: false,
+      no_cache: false,
+      no_upload: true,
+      need_ms: false,
+      default_root: "",
+    },
   },
 
   Teambition: {
@@ -5056,6 +5246,16 @@ const driverConfigs: Record<string, any> = {
       { name: "order_by", type: "string", default: "", required: false },
       { name: "order_direction", type: "string", default: "", required: false },
     ],
+    config: {
+      name: "Teambition",
+      local_sort: false,
+      only_local: false,
+      only_proxy: false,
+      no_cache: false,
+      no_upload: true,
+      need_ms: false,
+      default_root: "",
+    },
   },
 
   Teldrive: {
@@ -5073,6 +5273,16 @@ const driverConfigs: Record<string, any> = {
       { name: "access_token", type: "text", default: "", required: true },
       { name: "root_path", type: "string", default: "", required: false },
     ],
+    config: {
+      name: "Teldrive",
+      local_sort: false,
+      only_local: false,
+      only_proxy: false,
+      no_cache: false,
+      no_upload: true,
+      need_ms: false,
+      default_root: "",
+    },
   },
 }
 
