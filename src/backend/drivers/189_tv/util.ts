@@ -166,7 +166,19 @@ export class Client189TV {
       const INTERVAL_MS = 2000
       let token: string | null = null
       for (let i = 0; i < MAX_POLL; i++) {
-        token = await this.pollQrLoginResult(uuid)
+        try {
+          token = await this.pollQrLoginResult(uuid)
+        } catch (e: any) {
+          const msg = String(e?.message || "")
+          if (msg.includes("189TV_QRCODE_EXPIRED")) {
+            const nextUuid = await this.getQrCodeUuid()
+            if (this.persistAddition) {
+              await this.persistAddition({ temp_uuid: nextUuid })
+            }
+            throw new Error("[189TV] QR expired, please re-scan: " + nextUuid)
+          }
+          throw e
+        }
         if (token) break
         // eslint-disable-next-line no-await-in-loop
         await new Promise((r) => setTimeout(r, INTERVAL_MS))
@@ -218,7 +230,14 @@ export class Client189TV {
       )) as E189AccessTokenResp
     } catch (e: any) {
       const msg = String(e?.message || "")
-      if (msg.includes("API 错误") || msg.includes("非预期响应")) return null
+      if (
+        (msg.includes('二维码') && (msg.includes('失效') || msg.includes('过期'))) ||
+        msg.includes('二维码过期') ||
+        msg.toLowerCase().includes('qrcode') && msg.toLowerCase().includes('expired')
+      ) {
+        throw new Error('189TV_QRCODE_EXPIRED')
+      }
+      if (msg.includes('API 错误') || msg.includes('非预期响应')) return null
       throw e
     }
     const token = String(
