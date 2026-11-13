@@ -4514,7 +4514,13 @@ const driverConfigs: Record<string, any> = {
     default_mount_path: "/guangyapan",
     common: COMMON_FIELDS,
     additional: [
-      { name: "client_id", type: "string", default: "", required: true },
+      {
+        name: "client_id",
+        type: "string",
+        default: "aMe-8VSlkrbQXpUR",
+        required: false,
+        help: "光鸭网页端的公共应用标识，已内置默认值，通常无需修改；仅当官方更换标识时才需覆盖",
+      },
       { name: "device_id", type: "string", default: "", required: false },
       { name: "device_sign", type: "string", default: "", required: false },
       { name: "access_token", type: "text", default: "", required: false },

@@ -20,9 +20,21 @@ import {
   unixOrNow,
 } from "./util"
 
+/**
+ * 光鸭云盘网页端的公共应用标识（client_id）。
+ *
+ * 该值不是"开发者凭证"，而是 guangyapan.com 网页版内置的公开常量；
+ * 接口在缺少 `X-Client-Id` 时会直接 400（x-client-id required）。
+ * 提取自官网前端 bundle：`index.bcbab7d6c4.js` → `clientId:"aMe-8VSlkrbQXpUR"`。
+ *
+ * 因此这里给内置默认值：普通用户只需手机号 + 短信验证码即可，无需任何申请。
+ * 若官方将来更换该标识，用户仍可在存储配置里手动覆盖 `client_id`。
+ */
+export const DEFAULT_GYP_CLIENT_ID = "aMe-8VSlkrbQXpUR"
+
 export function normalizeGuangYaPanAddition(a: any): GuangYaPanAddition {
   const norm = { ...(a || {}) } as any
-  norm.client_id = (norm.client_id || "").trim()
+  norm.client_id = (norm.client_id || "").trim() || DEFAULT_GYP_CLIENT_ID
   norm.device_id = normalizeDeviceID(norm.device_id || "")
   if (!norm.device_id) norm.device_id = randomDeviceID()
   norm.device_sign = (norm.device_sign || "").trim() || "wdi10." + norm.device_id

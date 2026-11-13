@@ -6,7 +6,11 @@ import {
   unixOrNow,
   GuangYaPanClient,
 } from "./util"
-import { GuangYaPanDriver, normalizeGuangYaPanAddition } from "./driver"
+import {
+  GuangYaPanDriver,
+  normalizeGuangYaPanAddition,
+  DEFAULT_GYP_CLIENT_ID,
+} from "./driver"
 
 test("normalizePhoneE164 formats CN mobile numbers", () => {
   assert.equal(normalizePhoneE164("13800138000"), "+86 13800138000")
@@ -180,9 +184,16 @@ test("init: 无任何凭据时抛出可读错误", async () => {
   await assert.rejects(() => driver.init(), /login failed/)
 })
 
-test("init: 缺 client_id 直接失败", async () => {
-  const driver = new GuangYaPanDriver({ access_token: "at" })
-  await assert.rejects(() => driver.init(), /client_id is required/)
+test("init: 缺 client_id 时使用内置默认值（无需开发者申请）", () => {
+  // 归一化后应填入内置公共 client_id，用户无需申请开发者账号
+  const norm = normalizeGuangYaPanAddition({ access_token: "at" })
+  assert.equal(norm.client_id, DEFAULT_GYP_CLIENT_ID)
+  assert.equal(DEFAULT_GYP_CLIENT_ID, "aMe-8VSlkrbQXpUR")
+})
+
+test("init: 自定义 client_id 时保留用户值", () => {
+  const norm = normalizeGuangYaPanAddition({ client_id: " custom-cid " })
+  assert.equal(norm.client_id, "custom-cid")
 })
 
 test("init: verify_code 错误时抛 verify code failed 且不触发 signin", async () => {
