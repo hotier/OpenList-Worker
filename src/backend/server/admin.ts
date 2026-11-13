@@ -404,12 +404,47 @@ adminRouter.post("/storage/update", async (c) => {
   if (idx !== -1) {
     const rawDriver = body.driver || db.storages[idx].driver
     const normalizedDriver = normalizeDriver(rawDriver)
-    const updatedAddition = ensureStorageAdditionDeviceId(
+    let updatedAddition = ensureStorageAdditionDeviceId(
       normalizedDriver,
       body.addition !== undefined
         ? body.addition
         : db.storages[idx].addition || "{}",
     )
+
+    // 保留「服务端自管理」的 addition 字段（temp_uuid、驱动运行时回写的
+    // token 等）：编辑表单只渲染 driverConfigs.additional 里声明的字段，
+    // 未声明的键随表单提交天然丢失。若不加这一步，189TV 扫码流程的
+    // temp_uuid 在用户点「编辑→保存」后就会消失，登录授权永远完不成。
+    //
+    // 语义：仅保留**表单未声明**的键；表单里声明的字段以用户提交值为准
+    // （允许用户主动清空某个配置）。
+    try {
+      const prevRaw = db.storages[idx].addition
+      const prev =
+        typeof prevRaw === "string" ? JSON.parse(prevRaw || "{}") : prevRaw || {}
+      const nextRaw = updatedAddition
+      const next =
+        typeof nextRaw === "string" ? JSON.parse(nextRaw || "{}") : nextRaw || {}
+      const declared = new Set(
+        (
+          driverConfigs[normalizedDriver]?.additional as
+            | Array<{ name: string }>
+            | undefined
+        )?.map((f) => f.name) || [],
+      )
+      let changed = false
+      for (const k of Object.keys(prev)) {
+        if (!declared.has(k) && !(k in next)) {
+          next[k] = prev[k]
+          changed = true
+        }
+      }
+      if (changed) {
+        updatedAddition = JSON.stringify(next)
+      }
+    } catch {
+      // addition 解析失败时不做合并，按原值保存
+    }
 
     const updatedStorage = {
       ...db.storages[idx],
