@@ -175,7 +175,11 @@ export class Client189TV {
             if (this.persistAddition) {
               await this.persistAddition({ temp_uuid: nextUuid })
             }
-            throw new Error("[189TV] QR expired, please re-scan: " + nextUuid)
+            throw new Error(
+              "[189TV] 二维码已失效，请用下面的新链接重新登录（旧链接已作废）：\n" +
+                nextUuid +
+              "\n完成登录后立即 禁用→启用 该存储",
+            )
           }
           throw e
         }
