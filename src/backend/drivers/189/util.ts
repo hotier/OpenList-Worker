@@ -286,6 +286,11 @@ export class Pan189Client {
    * 登录天翼云盘：
    * 1. 尝试使用已有 Cookie 请求主页判断是否已登录
    * 2. 若未登录且配置了账号密码，执行 open.e.189.cn OAuth2 登录流程
+   *
+   * 注意：`cookie` 非空时本方法直接返回（零网络调用，见下方首个分支）——
+   * 这是刻意的性能约定，也让「仅配置 Cookie」的部署完全不碰账号密码流程。
+   * Cookie 真正失效时的恢复逻辑在 `request()` 的 InvalidSessionKey 分支
+   * （那里会先复核 Cookie 再决定是否强制重登，见 probeCookieSession 注释）。
    */
   async login(options: { force?: boolean } = {}): Promise<void> {
     if (this.cookie && !options.force) return
@@ -451,6 +456,43 @@ export class Pan189Client {
   /**
    * 发送 189 API 请求，带 SessionKey 自动恢复与 Cookie 传递
    */
+  /**
+   * 用一次真实 API 调用验证当前 Cookie 是否仍然有效。
+   *
+   * 选 `listFiles` 而不是登录页重定向：前者是驱动真正依赖的业务接口，
+   * 返回 `res_code === 0` 或合法的 fileListAO 即说明会话可用；后者
+   * 的重定向目标会随平台改版变化（见 login 的注释）。
+   *
+   * 注意：这里**刻意不抛错**——探测失败只代表「Cookie 不可用」，应由
+   * 调用方决定是回退到账号密码登录还是报错，探测本身不该中断流程。
+   *
+   * @returns true = Cookie 有效，可跳过登录
+   */
+  private async probeCookieSession(): Promise<boolean> {
+    try {
+      // retryOnInvalidSession: false —— 避免「会话失效 → 触发 login(force)
+      // → 再次 probe」的递归。
+      const resp = await this.request<any>(
+        "https://cloud.189.cn/api/open/file/listFiles.action",
+        {
+          method: "GET",
+          params: {
+            pageSize: "1",
+            pageNum: "1",
+            mediaType: "0",
+            folderId: this.getRootId(),
+            iconOption: "5",
+          },
+          retryOnInvalidSession: false,
+        },
+      )
+      // 有效的业务响应必然带 fileListAO（哪怕是空目录）
+      return Boolean(resp && typeof resp === "object" && resp.fileListAO)
+    } catch {
+      return false
+    }
+  }
+
   async request<T = any>(
     url: string,
     options: {
@@ -510,7 +552,21 @@ export class Pan189Client {
       String(data.res_code) === "1010"
     if (invalidSession) {
       if (retry) {
-        await this.login({ force: true })
+        // 已有 Cookie 时先复核它是否真的失效，再决定是否强制重登。
+        //
+        // 背景（2026-11 实测）：天翼云盘对机房出口 IP（EdgeOne / Cloudflare）
+        // 的**账号密码登录**会要求「设备二次校验」并直接失败，而用户配置的
+        // Cookie 往往仍然有效（能正常 listFiles）。若不复核就 login(force)，
+        // 会把一次偶发的 InvalidSessionKey 变成「永久登录失败 + 状态被写成
+        // 设备校验错误」，表现为填了正确 Cookie 却一直报错。
+        //
+        // 语义：复核成功 → 直接重试原请求（Cookie 可用，无需重登）；
+        //       复核失败 → 走原来的 login(force) 账号密码流程（行为不变）。
+        const cookieStillValid =
+          this.cookie ? await this.probeCookieSession() : false
+        if (!cookieStillValid) {
+          await this.login({ force: true })
+        }
         return this.request<T>(url, {
           ...options,
           retryOnInvalidSession: false,
