@@ -223,6 +223,19 @@ export class GuangYaPanClient {
     for (let retries = 0; ; retries++) {
       if (!this.isCaptchaInvalid(out)) {
         if (!res.ok || out.error || !(out.verification_id || "").trim()) {
+          // 光鸭对发短信接口强制「人机安全验证」：captcha/init 拿到的是
+          // 未完成的会话 token，服务端一律返回 captcha_required / "No captcha"
+          // （实测：不带头、放请求头、放 body 三种传法结果相同）。
+          // 该验证只能由人在浏览器完成滑块，驱动无法代劳，故给出可操作提示。
+          if (this.isCaptchaRequired(out)) {
+            throw new Error(
+              "captcha required: 光鸭发短信前必须完成人机验证，驱动无法自动通过。" +
+                "请二选一：(1) 在浏览器登录 guangyapan.com，登录后从 localStorage/接口响应复制 " +
+                "access_token 与 refresh_token 填入本存储（推荐，最省事）；" +
+                "(2) 在浏览器完成滑块后，从发码请求头复制 X-Captcha-Token 填入 captcha_token 字段，" +
+                "并在 5 分钟内保存（token 有效期约 300 秒）。",
+            )
+          }
           throw new Error(
             "request verification failed: " +
               GuangYaPanClient.accountErr(out, res.status),
@@ -242,6 +255,19 @@ export class GuangYaPanClient {
       await this.ensureCaptchaToken(true)
       ;({ res, out } = await doRequest())
     }
+  }
+
+  /** 服务端要求人机验证（captcha_required / "No captcha"） */
+  private isCaptchaRequired(out: any): boolean {
+    const e = `${out?.error || ""} ${out?.error_description || ""} ${
+      out?.error_code || ""
+    }`
+    return (
+      e.includes("captcha_required") ||
+      e.includes("No captcha") ||
+      e.includes("4001") ||
+      e.includes("safety verification")
+    )
   }
 
   private isCaptchaInvalid(out: any): boolean {

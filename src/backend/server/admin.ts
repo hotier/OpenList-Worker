@@ -4537,14 +4537,14 @@ const driverConfigs: Record<string, any> = {
         type: "string",
         default: "",
         required: false,
-        help: "图形验证 token（发短信需要时提供；置空时驱动会自动获取）",
+        help: "人机验证 token（X-Captcha-Token）。光鸭发短信强制安全验证，驱动无法自动通过：需在浏览器登录 guangyapan.com 完成滑块后，从发码请求头复制该值填入，并在 5 分钟内保存。更省事的做法是直接填 access_token/refresh_token",
       },
       {
         name: "send_code",
         type: "bool",
         default: "",
         required: false,
-        help: "设为 true 并保存以发送短信验证码，发送后自动复位为 false",
+        help: "设为 true 并保存以发送短信验证码（需先提供有效的 captcha_token），发送后自动复位为 false",
       },
       {
         name: "verify_code",
