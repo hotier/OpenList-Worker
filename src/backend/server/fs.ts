@@ -529,7 +529,7 @@ fsRouter.post("/list", async (c) => {
       if (!storage) return []
       const tools: string[] = []
       const driver = (storage as any)
-      // S3 系列驱动支持 s3_presigned 直传。
+      // S3 系列驱动支持预签名直传。
       // 必须按「归一化后的驱动名」判断（小写 + 去非字母数字）：驱动名里可能含
       // 空格（如 "Cloudflare R2"），拿原始字符串做 `^` 锚定正则会漏判。
       const normDriverName = String(driver.driver || "")
@@ -550,7 +550,21 @@ fsRouter.post("/list", async (c) => {
           }
           canSignDirectUpload = r2CanSignDirectUpload(addition, c.env)
         }
-        if (canSignDirectUpload) tools.push("s3_presigned")
+        if (canSignDirectUpload) {
+          // 工具名必须用官方前端认识的标识符。
+          // 官方前端（OpenList-Frontend，含 4.2.9）的上传器按 `includes("HttpDirect")`
+          // 判定是否提供「HTTP Direct」直传入口（见其 Upload chunk），而本移植版
+          // 原先只声明了 "s3_presigned"——该字符串在官方前端产物中出现 0 次，
+          // 导致「启用前端直传」的存储在上传对话框里根本不显示直传选项，静默
+          // 退回 Stream（/fs/put），大文件因此撞上云函数请求体上限（EdgeOne 6 MiB）。
+          //
+          // 这里同时保留两个名字：
+          //   - "HttpDirect"   ：官方前端识别，浏览器直传（本项目主用途）
+          //   - "s3_presigned" ：既有声明，兼容已识别旧名的客户端
+          // 纯增量：不改变任何现有上传方式（Stream / Form 始终可用）。
+          tools.push("HttpDirect")
+          if (!tools.includes("s3_presigned")) tools.push("s3_presigned")
+        }
       }
       // 驱动自声明的 direct_upload_tools 字段（驱动扩展点）
       if (Array.isArray(driver.direct_upload_tools)) {
