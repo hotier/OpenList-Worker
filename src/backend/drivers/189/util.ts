@@ -551,6 +551,19 @@ export class Pan189Client {
       data.res_code === "InvalidSessionKey" ||
       String(data.res_code) === "1010"
     if (invalidSession) {
+      // 天翼云盘把会话与**登录 IP** 绑定。用别的出口 IP 携带 Cookie 请求时，
+      // 服务端返回 `InvalidSessionKey`，errorMsg 形如：
+      //   check ip error - curIp=43.156.64.209, cookiesIp=113.57.152.193
+      // 这种情况重试/重新登录都无济于事（账号密码登录还会撞上设备二次校验），
+      // 必须直接给出可读原因，避免用户误以为 Cookie 填错。
+      const sessionMsg = String(data.errorMsg || data.res_message || "")
+      if (/check ip error/i.test(sessionMsg)) {
+        throw new Error(
+          `[189Cloud] 会话与登录 IP 绑定，当前出口 IP 与 Cookie 签发时的 IP 不一致：${sessionMsg}。` +
+            `Cookie 只能在签发它的网络出口（同一公网 IP）使用；` +
+            `请改用不受 IP 限制的存储，或把该存储部署在与抓 Cookie 时相同的网络环境。`,
+        )
+      }
       if (retry) {
         // 已有 Cookie 时先复核它是否真的失效，再决定是否强制重登。
         //
@@ -573,7 +586,7 @@ export class Pan189Client {
         })
       }
       throw new Error(
-        data.errorMsg || data.res_message || "[189Cloud] 登录会话已失效",
+        sessionMsg || "[189Cloud] 登录会话已失效",
       )
     }
 
